@@ -1,0 +1,29 @@
+# Example configuration file for GKE Log Processor
+# Copy this to ~/.gke-logs.yaml or specify with --config-file
+
+clusters:
+  - name: production
+    project_id: my-prod-project
+    region: us-central1
+    namespace: default
+    
+  - name: staging
+    project_id: my-staging-project
+    zone: us-west1-b
+    namespace: staging
+    
+  - name: development
+    project_id: my-dev-project
+    region: europe-west1
+    namespace: dev
+
+gemini:
+  api_key: ${GEMINI_API_KEY}  # Can reference environment variables
+  model: gemini-pro
+  temperature: 0.1
+  max_tokens: 1000
+
+ui:
+  theme: dark
+  refresh_rate: 1000  # milliseconds
+  max_log_lines: 1000

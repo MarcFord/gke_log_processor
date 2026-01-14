@@ -1,0 +1,91 @@
+[project]
+name = "gke-log-processor"
+version = "0.1.0"
+description = "A CLI application for monitoring GKE pod logs with AI-powered analysis"
+readme = "README.md"
+requires-python = ">=3.14"
+authors = [
+    {name = "Marc Ford", email = "your.email@example.com"},
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: System :: Monitoring",
+    "Topic :: System :: Systems Administration",
+]
+keywords = ["gke", "kubernetes", "logs", "monitoring", "cli", "gemini", "ai"]
+dependencies = [
+    "textual>=0.50.0",
+    "google-auth>=2.47.0",
+    "google-cloud-container>=2.62.0",
+    "google-genai>=1.57.0",
+    "kubernetes>=34.1.0",
+    "click>=8.1.0",
+    "pydantic>=2.5.0",
+    "rich>=13.0.0",
+    "pydantic-settings>=2.12.0",
+    "pyyaml>=6.0.3",
+]
+
+[project.urls]
+Homepage = "https://github.com/MarcFord/gke_log_processor"
+Repository = "https://github.com/MarcFord/gke_log_processor"
+Documentation = "https://github.com/MarcFord/gke_log_processor/blob/main/README.md"
+Issues = "https://github.com/MarcFord/gke_log_processor/issues"
+
+[project.scripts]
+gke-logs = "gke_log_processor.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "autopep8>=2.3.2",
+    "flake8>=7.3.0",
+    "black>=25.12.0",
+    "isort>=7.0.0",
+    "mypy>=1.19.1",
+    "pylint>=4.0.4",
+    "pytest-cov>=7.0.0",
+    "types-pyyaml>=6.0.12.20250915",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+package = true
+
+[tool.pylint]
+max-line-length = 130
+max-args = 10
+max-attributes = 15
+max-branches = 15
+
+[tool.pylint.messages_control]
+disable = [
+    "too-many-arguments",
+    "too-many-positional-arguments", 
+    "too-many-branches",
+    "too-many-instance-attributes",
+    "import-outside-toplevel",
+    "logging-fstring-interpolation",
+    "unnecessary-pass",
+    "fixme",
+    "no-else-raise",
+    "no-else-return",
+    "raise-missing-from",
+    "line-too-long",
+    "no-value-for-parameter",
+    "no-member",
+    "unspecified-encoding",
+    "unnecessary-lambda"
+]
+
+[tool.pylint.format]
+max-line-length = 130
