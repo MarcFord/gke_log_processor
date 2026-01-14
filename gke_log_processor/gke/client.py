@@ -373,7 +373,7 @@ class GKEClient:
             raise GKEConnectionError(
                 f"Failed to get cluster nodes: {e}") from e
 
-    def get_kubernetes_client(self) -> 'KubernetesClient':
+    def get_kubernetes_client(self):
         """
         Get a configured KubernetesClient instance.
 

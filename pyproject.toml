@@ -85,7 +85,8 @@ disable = [
     "no-value-for-parameter",
     "no-member",
     "unspecified-encoding",
-    "unnecessary-lambda"
+    "unnecessary-lambda",
+    "broad-exception-caught"
 ]
 
 [tool.pylint.format]

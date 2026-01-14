@@ -5,10 +5,9 @@ This module provides a high-level interface for interacting with Kubernetes
 clusters through the Kubernetes Python client library.
 """
 
-import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional
 
 import kubernetes  # type: ignore[import-untyped]
 from kubernetes.client import (  # type: ignore[import-untyped]
