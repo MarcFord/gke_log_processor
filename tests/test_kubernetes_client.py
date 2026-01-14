@@ -6,21 +6,13 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from kubernetes.client import ApiException  # type: ignore[import-untyped]
 from kubernetes.client import (  # type: ignore[import-untyped]  # type: ignore[import-untyped]
-    ApiException,  # type: ignore[import-untyped]
-    V1Container,
-    V1ContainerStatus,
-    V1ObjectMeta,
-    V1Pod,
-    V1PodCondition,
-    V1PodSpec,
-    V1PodStatus,
-)
+    V1Container, V1ContainerStatus, V1ObjectMeta, V1Pod, V1PodCondition,
+    V1PodSpec, V1PodStatus)
 
-from gke_log_processor.core.exceptions import (
-    KubernetesConnectionError,
-    PodNotFoundError,
-)
+from gke_log_processor.core.exceptions import (KubernetesConnectionError,
+                                               PodNotFoundError)
 from gke_log_processor.gke.kubernetes_client import KubernetesClient, PodInfo
 
 
