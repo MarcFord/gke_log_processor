@@ -17,6 +17,13 @@ from ..core.exceptions import ConfigurationError, GKEConnectionError
 logger = logging.getLogger(__name__)
 
 
+# Import here to avoid circular imports
+def get_kubernetes_client_class():
+    """Get KubernetesClient class to avoid circular imports."""
+    from .kubernetes_client import KubernetesClient
+    return KubernetesClient
+
+
 @dataclass
 class ClusterInfo:
     """Information about a GKE cluster."""
@@ -365,6 +372,50 @@ class GKEClient:
         except Exception as e:
             raise GKEConnectionError(
                 f"Failed to get cluster nodes: {e}") from e
+
+    def get_kubernetes_client(self) -> 'KubernetesClient':
+        """
+        Get a configured KubernetesClient instance.
+
+        Returns:
+            Configured KubernetesClient for pod operations.
+
+        Raises:
+            GKEConnectionError: If Kubernetes client cannot be created.
+        """
+        try:
+            # Import here to avoid circular imports
+            KubernetesClientClass = get_kubernetes_client_class()
+
+            # Create Kubernetes configuration using our authenticated client
+            configuration = k8s_client.Configuration()
+            configuration.host = f"https://{self.cluster_info.endpoint}"
+            configuration.verify_ssl = True
+
+            # Set up authentication
+            self.credentials.refresh(default()[1])  # Refresh credentials
+            configuration.api_key_prefix['authorization'] = 'Bearer'
+            configuration.api_key['authorization'] = self.credentials.token
+
+            # Set up CA certificate
+            import base64
+            import tempfile
+
+            with tempfile.NamedTemporaryFile(delete=False) as ca_cert_file:
+                ca_cert_data = base64.b64decode(self.cluster_info.ca_certificate)
+                ca_cert_file.write(ca_cert_data)
+                ca_cert_file.flush()
+                configuration.ssl_ca_cert = ca_cert_file.name
+
+            # Create and configure the KubernetesClient
+            k8s_client_instance = KubernetesClientClass(config=configuration)
+
+            logger.info("Successfully created configured KubernetesClient")
+            return k8s_client_instance
+
+        except Exception as e:
+            raise GKEConnectionError(
+                f"Failed to create KubernetesClient: {e}") from e
 
     def close(self):
         """Clean up resources."""

@@ -1,0 +1,56 @@
+{
+    "flake8.path": [".venv/bin/flake8"],
+    "flake8.args": [
+        "--max-line-length=130"
+    ],
+    "autopep8.args": [
+        "--max-line-length",
+        "130",
+        "--aggressive"
+    ],
+    "autopep8.path": [
+        ".venv/bin/autopep8"
+    ],
+    "editor.minimap.enabled": true,
+    "editor.fontSize": 16,
+    "editor.rulers": [
+        80,
+        130
+    ],
+    "window.zoomLevel": 2,
+    "editor.tabCompletion": "on",
+    "editor.mouseWheelZoom": true,
+    "explorer.confirmDragAndDrop": false,
+    "editor.formatOnPaste": true,
+    "editor.formatOnSave": true,
+    "[python]": {
+        "editor.tabSize": 4,
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit"
+        },
+        "editor.defaultFormatter": "ms-python.autopep8",
+        "editor.formatOnSave": true
+    },
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true,
+    "python.testing.pytestPath": ".venv/bin/pytest",
+    "python.testing.cwd": "${workspaceFolder}/",
+    "python.testing.pytestArgs": [
+        "-v",
+        "--cov=gke_log_processor/",
+        "--cov-report=xml",
+        "tests/"
+    ],
+    "python.testing.autoTestDiscoverOnSaveEnabled": true,
+    "python.defaultInterpreterPath": "/home/mford/Projects/github.com/MarcFord/gke_log_processor/.venv/bin/python",
+    "python.terminal.activateEnvironment": true,
+    "python.envFile": "${workspaceFolder}/.env",
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}"
+    ],
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.autoSearchPaths": true,
+    "python.linting.enabled": true,
+    "python.linting.flake8Enabled": true,
+    "python.linting.flake8Path": ".venv/bin/flake8"
+}

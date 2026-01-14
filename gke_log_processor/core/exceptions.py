@@ -25,6 +25,18 @@ class KubernetesError(GKELogProcessorError):
     pass
 
 
+class KubernetesConnectionError(KubernetesError):
+    """Raised when there's a connection error to Kubernetes cluster."""
+
+    pass
+
+
+class PodNotFoundError(KubernetesError):
+    """Raised when a requested pod is not found."""
+
+    pass
+
+
 class AIServiceError(GKELogProcessorError):
     """Raised when there's an error with the AI service."""
 
