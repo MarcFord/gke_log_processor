@@ -116,12 +116,12 @@ class TestGeminiConfig:
         with pytest.raises(ValueError):
             GeminiConfig(api_key="test", max_output_tokens=32769)
 
-    @patch("google.generativeai.configure")
-    def test_configure_genai(self, mock_configure):
+    def test_configure_genai(self):
         """Test GenAI configuration."""
         config = GeminiConfig(api_key="test-api-key")
+        # configure_genai now just passes - no actual configuration needed
         config.configure_genai()
-        mock_configure.assert_called_once_with(api_key="test-api-key")
+        # No assertion needed since it's just a pass
 
 
 class TestRequestTracker:
@@ -272,63 +272,56 @@ class TestGeminiClient:
             ),
         ]
 
-    @patch("google.generativeai.configure")
-    def test_client_initialization(self, mock_configure, config):
+    def test_client_initialization(self, config):
         """Test client initialization."""
         client = GeminiClient(config)
         assert client.config == config
         assert client.request_tracker is not None
-        assert client._model is None
-        mock_configure.assert_called_once_with(api_key="test-api-key")
+        assert client._client is None
 
-    @patch("google.generativeai.configure")
-    @patch("google.generativeai.GenerativeModel")
-    def test_model_property(self, mock_model_class, mock_configure, config):
-        """Test model property lazy loading."""
-        mock_model = Mock()
-        mock_model_class.return_value = mock_model
+    @patch("google.genai.Client")
+    def test_client_property(self, mock_client_class, config):
+        """Test client property lazy loading."""
+        mock_client = Mock()
+        mock_client_class.return_value = mock_client
 
         client = GeminiClient(config)
 
-        # First access creates model
-        model = client.model
-        assert model == mock_model
-        mock_model_class.assert_called_once()
+        # First access creates client
+        client_obj = client.client
+        assert client_obj == mock_client
+        mock_client_class.assert_called_once_with(api_key="test-api-key")
 
-        # Second access returns same model
-        model2 = client.model
-        assert model2 == mock_model
-        assert mock_model_class.call_count == 1
+        # Second access returns same client
+        client_obj2 = client.client
+        assert client_obj2 == mock_client
+        assert mock_client_class.call_count == 1
 
-    @patch("google.generativeai.configure")
     @pytest.mark.asyncio
-    async def test_test_connection_success(self, mock_configure, config):
+    async def test_test_connection_success(self, config):
         """Test successful connection test."""
         with patch.object(GeminiClient, "_make_request_with_retry", return_value="OK"):
             client = GeminiClient(config)
             result = await client.test_connection()
             assert result is True
 
-    @patch("google.generativeai.configure")
     @pytest.mark.asyncio
-    async def test_test_connection_failure(self, mock_configure, config):
+    async def test_test_connection_failure(self, config):
         """Test failed connection test."""
         with patch.object(GeminiClient, "_make_request_with_retry", side_effect=Exception("Connection failed")):
             client = GeminiClient(config)
             result = await client.test_connection()
             assert result is False
 
-    @patch("google.generativeai.configure")
     @pytest.mark.asyncio
-    async def test_analyze_logs_empty_list(self, mock_configure, config):
+    async def test_analyze_logs_empty_list(self, config):
         """Test analyzing empty log list."""
         client = GeminiClient(config)
         with pytest.raises(GeminiError, match="No log entries provided"):
             await client.analyze_logs([])
 
-    @patch("google.generativeai.configure")
     @pytest.mark.asyncio
-    async def test_analyze_logs_success(self, mock_configure, config, sample_log_entries):
+    async def test_analyze_logs_success(self, config, sample_log_entries):
         """Test successful log analysis."""
         mock_response = "Analysis: CRITICAL severity issues detected. Critical database connectivity problems found."
 
@@ -340,9 +333,8 @@ class TestGeminiClient:
             assert result.overall_severity == SeverityLevel.CRITICAL
             assert result.confidence_score == 0.8
 
-    @patch("google.generativeai.configure")
     @pytest.mark.asyncio
-    async def test_detect_patterns(self, mock_configure, config, sample_log_entries):
+    async def test_detect_patterns(self, config, sample_log_entries):
         """Test pattern detection."""
         mock_response = "Pattern detected: Database connection errors occurring repeatedly."
 
@@ -352,9 +344,8 @@ class TestGeminiClient:
 
             assert isinstance(patterns, list)
 
-    @patch("google.generativeai.configure")
     @pytest.mark.asyncio
-    async def test_summarize_logs(self, mock_configure, config, sample_log_entries):
+    async def test_summarize_logs(self, config, sample_log_entries):
         """Test log summarization."""
         mock_response = "Summary: Application experiencing database connectivity issues. Requires immediate attention."
 
@@ -365,9 +356,8 @@ class TestGeminiClient:
             assert isinstance(summary, str)
             assert len(summary) > 0
 
-    @patch("google.generativeai.configure")
     @pytest.mark.asyncio
-    async def test_query_logs(self, mock_configure, config, sample_log_entries):
+    async def test_query_logs(self, config, sample_log_entries):
         """Test natural language queries."""
         mock_response = "Based on the logs, there are database connection issues affecting the application."
 
@@ -378,9 +368,8 @@ class TestGeminiClient:
             assert isinstance(answer, str)
             assert len(answer) > 0
 
-    @patch("google.generativeai.configure")
     @pytest.mark.asyncio
-    async def test_make_request_with_retry_success(self, mock_configure, config):
+    async def test_make_request_with_retry_success(self, config):
         """Test successful API request."""
         mock_response = Mock()
         mock_response.text = "Test response"
@@ -390,26 +379,23 @@ class TestGeminiClient:
             result = await client._make_request_with_retry("test prompt")
             assert result == "Test response"
 
-    @patch("google.generativeai.configure")
     @pytest.mark.asyncio
-    async def test_make_request_with_retry_rate_limit(self, mock_configure, config):
+    async def test_make_request_with_retry_rate_limit(self, config):
         """Test rate limit handling."""
         with patch.object(GeminiClient, "_make_api_call", side_effect=Exception("Rate limit exceeded")):
             client = GeminiClient(config)
             with pytest.raises(Exception, match="Rate limit exceeded"):
                 await client._make_request_with_retry("test prompt")
 
-    @patch("google.generativeai.configure")
     @pytest.mark.asyncio
-    async def test_make_request_with_retry_auth_error(self, mock_configure, config):
+    async def test_make_request_with_retry_auth_error(self, config):
         """Test authentication error handling."""
         with patch.object(GeminiClient, "_make_api_call", side_effect=Exception("Authentication failed")):
             client = GeminiClient(config)
             with pytest.raises(GeminiAuthenticationError):
                 await client._make_request_with_retry("test prompt")
 
-    @patch("google.generativeai.configure")
-    def test_build_analysis_prompt(self, mock_configure, config, sample_log_entries):
+    def test_build_analysis_prompt(self, config, sample_log_entries):
         """Test analysis prompt building."""
         client = GeminiClient(config)
         prompt = client._build_analysis_prompt(sample_log_entries, "comprehensive")
@@ -419,8 +405,7 @@ class TestGeminiClient:
         assert "Application started successfully" in prompt
         assert "Connection refused to database" in prompt
 
-    @patch("google.generativeai.configure")
-    def test_parse_analysis_response(self, mock_configure, config, sample_log_entries):
+    def test_parse_analysis_response(self, config, sample_log_entries):
         """Test parsing of analysis response."""
         client = GeminiClient(config)
         response = "The analysis shows CRITICAL issues with database connectivity. Immediate action recommended: Check database connection settings."
@@ -432,8 +417,7 @@ class TestGeminiClient:
         # Note: The simple parsing logic generates basic recommendations
         assert result.needs_immediate_attention == True
 
-    @patch("google.generativeai.configure")
-    def test_get_time_range(self, mock_configure, config, sample_log_entries):
+    def test_get_time_range(self, config, sample_log_entries):
         """Test time range calculation."""
         client = GeminiClient(config)
         time_range = client._get_time_range(sample_log_entries)
@@ -441,8 +425,7 @@ class TestGeminiClient:
         assert isinstance(time_range, str)
         assert "to" in time_range
 
-    @patch("google.generativeai.configure")
-    def test_get_log_level_distribution(self, mock_configure, config, sample_log_entries):
+    def test_get_log_level_distribution(self, config, sample_log_entries):
         """Test log level distribution calculation."""
         client = GeminiClient(config)
         distribution = client._get_log_level_distribution(sample_log_entries)

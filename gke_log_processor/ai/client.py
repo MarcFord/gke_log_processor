@@ -5,12 +5,8 @@ import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Union
 
-import google.generativeai as genai
-from google.generativeai.types import (
-    GenerateContentResponse,
-    HarmBlockThreshold,
-    HarmCategory,
-)
+from google import genai
+from google.genai import types
 from pydantic import BaseModel, Field
 
 from ..core.exceptions import LogProcessingError
@@ -42,7 +38,8 @@ class GeminiConfig(BaseModel):
 
     def configure_genai(self) -> None:
         """Configure the Google Generative AI library."""
-        genai.configure(api_key=self.api_key)
+        # Configuration is now handled by the Client object
+        pass
 
 
 class RequestTracker:
@@ -143,34 +140,37 @@ class GeminiClient:
         self.config = config
         self.logger = get_logger(__name__)
         self.request_tracker = RequestTracker(config.rate_limit)
-        self._model: Optional[genai.GenerativeModel] = None
+        self._client: Optional[genai.Client] = None
 
         # Configure the API
         config.configure_genai()
 
         # Safety settings - be more permissive for log analysis
-        self.safety_settings = {
-            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-        }
+        self.safety_settings = [
+            types.SafetySetting(
+                category='HARM_CATEGORY_HARASSMENT',
+                threshold='BLOCK_NONE'
+            ),
+            types.SafetySetting(
+                category='HARM_CATEGORY_HATE_SPEECH',
+                threshold='BLOCK_NONE'
+            ),
+            types.SafetySetting(
+                category='HARM_CATEGORY_SEXUALLY_EXPLICIT',
+                threshold='BLOCK_NONE'
+            ),
+            types.SafetySetting(
+                category='HARM_CATEGORY_DANGEROUS_CONTENT',
+                threshold='BLOCK_NONE'
+            ),
+        ]
 
     @property
-    def model(self) -> genai.GenerativeModel:
-        """Get the configured model instance."""
-        if self._model is None:
-            self._model = genai.GenerativeModel(
-                model_name=self.config.model,
-                safety_settings=self.safety_settings,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=self.config.temperature,
-                    top_p=self.config.top_p,
-                    top_k=self.config.top_k,
-                    max_output_tokens=self.config.max_output_tokens,
-                )
-            )
-        return self._model
+    def client(self) -> genai.Client:
+        """Get the configured client instance."""
+        if self._client is None:
+            self._client = genai.Client(api_key=self.config.api_key)
+        return self._client
 
     async def test_connection(self) -> bool:
         """Test the connection to Gemini API.
@@ -370,10 +370,18 @@ class GeminiClient:
             str: The response text
         """
         try:
-            # Generate content
+            # Generate content with new API
             response = await asyncio.to_thread(
-                self.model.generate_content,
-                prompt,
+                self.client.models.generate_content,
+                model=self.config.model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=self.config.temperature,
+                    top_p=self.config.top_p,
+                    top_k=self.config.top_k,
+                    max_output_tokens=self.config.max_output_tokens,
+                    safety_settings=self.safety_settings,
+                )
             )
 
             if not response.text:
