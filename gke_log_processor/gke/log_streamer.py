@@ -6,6 +6,7 @@ with intelligent buffering, rate limiting, and error handling.
 """
 
 import asyncio
+import inspect
 import logging
 import time
 from collections import deque
@@ -80,7 +81,7 @@ class LogEntry:
             LogLevel.INFO: 2,
             LogLevel.WARN: 3,
             LogLevel.ERROR: 4,
-            LogLevel.FATAL: 5
+            LogLevel.FATAL: 5,
         }
         return scores.get(self.level, 2)
 
@@ -96,9 +97,11 @@ class LogEntry:
 
     def __str__(self) -> str:
         """String representation of the log entry."""
-        return (f"[{self.formatted_timestamp}] "
-                f"{self.pod_name}/{self.container_name} "
-                f"[{self.level.value}] {self.message}")
+        return (
+            f"[{self.formatted_timestamp}] "
+            f"{self.pod_name}/{self.container_name} "
+            f"[{self.level.value}] {self.message}"
+        )
 
 
 @dataclass
@@ -149,8 +152,8 @@ class LogBuffer:
             # Check if we need to flush
             current_time = time.time()
             should_flush = (
-                len(self._buffer) >= self.max_size or
-                (current_time - self._last_flush) >= self.flush_interval
+                len(self._buffer) >= self.max_size
+                or (current_time - self._last_flush) >= self.flush_interval
             )
 
             if should_flush:
@@ -169,7 +172,7 @@ class LogBuffer:
         # Call all callbacks
         for callback in self._callbacks:
             try:
-                if asyncio.iscoroutinefunction(callback):
+                if inspect.iscoroutinefunction(callback):
                     await callback(entries)
                 else:
                     callback(entries)
@@ -230,7 +233,9 @@ class RateLimiter:
 class LogStreamer:
     """Real-time log streaming from Kubernetes pods."""
 
-    def __init__(self, kubernetes_client: KubernetesClient, config: Optional[StreamConfig] = None):
+    def __init__(
+        self, kubernetes_client: KubernetesClient, config: Optional[StreamConfig] = None
+    ):
         """Initialize the log streamer."""
         self.k8s_client = kubernetes_client
         self.config = config or StreamConfig()
@@ -239,15 +244,15 @@ class LogStreamer:
         self._active_streams: Dict[str, asyncio.Task] = {}
         self._buffers: Dict[str, LogBuffer] = {}
         self._rate_limiter = RateLimiter(
-            self.config.max_logs_per_second,
-            self.config.rate_limit_window
+            self.config.max_logs_per_second, self.config.rate_limit_window
         )
         self._shutdown_event = asyncio.Event()
 
         logger.info(f"LogStreamer initialized with config: {self.config}")
 
-    async def stream_pod_logs(self, pod_info: PodInfo,
-                              container_name: Optional[str] = None) -> AsyncGenerator[LogEntry, None]:
+    async def stream_pod_logs(
+        self, pod_info: PodInfo, container_name: Optional[str] = None
+    ) -> AsyncGenerator[LogEntry, None]:
         """
         Stream logs from a specific pod and container.
 
@@ -271,22 +276,19 @@ class LogStreamer:
 
             # Configure stream parameters
             stream_params = {
-                'name': pod_info.name,
-                'namespace': pod_info.namespace,
-                'container': target_container,
-                'follow': self.config.follow_logs,
-                'timestamps': self.config.timestamps,
-                '_preload_content': False
+                "name": pod_info.name,
+                "namespace": pod_info.namespace,
+                "container": target_container,
+                "follow": self.config.follow_logs,
+                "timestamps": self.config.timestamps,
+                "_preload_content": False,
             }
 
             if self.config.tail_lines:
-                stream_params['tail_lines'] = self.config.tail_lines
+                stream_params["tail_lines"] = self.config.tail_lines
 
             # Start streaming
-            log_stream = stream(
-                api.read_namespaced_pod_log,
-                **stream_params
-            )
+            log_stream = stream(api.read_namespaced_pod_log, **stream_params)
 
             # Process log lines
             for line in log_stream:
@@ -302,7 +304,7 @@ class LogStreamer:
                         line.strip(),
                         pod_info.name,
                         pod_info.namespace,
-                        target_container
+                        target_container,
                     )
 
                     # Filter by log level - compare severity scores
@@ -312,7 +314,7 @@ class LogStreamer:
                         LogLevel.INFO: 2,
                         LogLevel.WARN: 3,
                         LogLevel.ERROR: 4,
-                        LogLevel.FATAL: 5
+                        LogLevel.FATAL: 5,
                     }.get(self.config.min_log_level, 2)
 
                     if log_entry.severity_score >= min_severity:
@@ -326,10 +328,13 @@ class LogStreamer:
 
         except Exception as e:
             logger.error(f"Error streaming logs from {stream_id}: {e}")
-            raise LogProcessingError(f"Failed to stream logs from {stream_id}: {e}") from e
+            raise LogProcessingError(
+                f"Failed to stream logs from {stream_id}: {e}"
+            ) from e
 
-    async def stream_multiple_pods(self, pods: List[PodInfo],
-                                   container_name: Optional[str] = None) -> AsyncGenerator[LogEntry, None]:
+    async def stream_multiple_pods(
+        self, pods: List[PodInfo], container_name: Optional[str] = None
+    ) -> AsyncGenerator[LogEntry, None]:
         """
         Stream logs from multiple pods simultaneously.
 
@@ -367,7 +372,9 @@ class LogStreamer:
             logger.error(f"Error in multi-pod streaming: {e}")
             raise LogProcessingError(f"Multi-pod streaming failed: {e}") from e
 
-    async def _merge_log_streams(self, streams: List[AsyncGenerator]) -> AsyncGenerator[LogEntry, None]:
+    async def _merge_log_streams(
+        self, streams: List[AsyncGenerator]
+    ) -> AsyncGenerator[LogEntry, None]:
         """Merge multiple async log streams into a single stream."""
         # Create tasks for each stream
         stream_tasks = []
@@ -389,10 +396,13 @@ class LogStreamer:
             while active_queues and not self._shutdown_event.is_set():
                 # Wait for any queue to have data
                 done, pending = await asyncio.wait(
-                    [asyncio.create_task(queue.get()) for i, queue in enumerate(stream_queues)
-                     if i in active_queues],
+                    [
+                        asyncio.create_task(queue.get())
+                        for i, queue in enumerate(stream_queues)
+                        if i in active_queues
+                    ],
                     return_when=asyncio.FIRST_COMPLETED,
-                    timeout=1.0
+                    timeout=1.0,
                 )
 
                 for task in done:
@@ -416,7 +426,9 @@ class LogStreamer:
 
             await asyncio.gather(*stream_tasks, return_exceptions=True)
 
-    async def _stream_to_queue(self, log_stream: AsyncGenerator, queue: asyncio.Queue, stream_id: str) -> None:
+    async def _stream_to_queue(
+        self, log_stream: AsyncGenerator, queue: asyncio.Queue, stream_id: str
+    ) -> None:
         """Feed a stream into a queue."""
         try:
             async for log_entry in log_stream:
@@ -431,7 +443,9 @@ class LogStreamer:
         # Using protected member access as this is within the same module context
         return self.k8s_client._get_api()  # pylint: disable=protected-access
 
-    def _parse_log_line(self, line: str, pod_name: str, namespace: str, container_name: str) -> LogEntry:
+    def _parse_log_line(
+        self, line: str, pod_name: str, namespace: str, container_name: str
+    ) -> LogEntry:
         """Parse a log line into a LogEntry object."""
         timestamp = datetime.now(timezone.utc)
         message = line
@@ -443,19 +457,21 @@ class LogStreamer:
                 "%Y-%m-%dT%H:%M:%S.%fZ",
                 "%Y-%m-%d %H:%M:%S.%f",
                 "%Y-%m-%dT%H:%M:%SZ",
-                "%Y-%m-%d %H:%M:%S"
+                "%Y-%m-%d %H:%M:%S",
             ]
 
             for fmt in timestamp_formats:
                 try:
                     # Look for timestamp at the beginning of the line
-                    if ' ' in line:
-                        timestamp_str = line.split(' ', 1)[0]
+                    if " " in line:
+                        timestamp_str = line.split(" ", 1)[0]
                         parsed_time = datetime.strptime(timestamp_str, fmt)
                         if parsed_time.tzinfo is None:
                             parsed_time = parsed_time.replace(tzinfo=timezone.utc)
                         timestamp = parsed_time
-                        message = line.split(' ', 1)[1] if len(line.split(' ', 1)) > 1 else ""
+                        message = (
+                            line.split(" ", 1)[1] if len(line.split(" ", 1)) > 1 else ""
+                        )
                         break
                 except ValueError:
                     continue
@@ -466,12 +482,15 @@ class LogStreamer:
             namespace=namespace,
             container_name=container_name,
             message=message,
-            raw_line=line
+            raw_line=line,
         )
 
-    async def start_buffered_streaming(self, pods: List[PodInfo],
-                                       callback: Callable[[List[LogEntry]], None],
-                                       container_name: Optional[str] = None) -> str:
+    async def start_buffered_streaming(
+        self,
+        pods: List[PodInfo],
+        callback: Callable[[List[LogEntry]], None],
+        container_name: Optional[str] = None,
+    ) -> str:
         """
         Start buffered log streaming from multiple pods.
 
@@ -486,12 +505,14 @@ class LogStreamer:
         if not pods:
             raise LogProcessingError("No pods provided for buffered streaming")
 
-        stream_id = f"buffered_{hash(tuple(pod.name for pod in pods))}_{int(time.time())}"
+        stream_id = (
+            f"buffered_{hash(tuple(pod.name for pod in pods))}_{int(time.time())}"
+        )
 
         # Create buffer
         buffer = LogBuffer(
             max_size=self.config.max_buffer_size,
-            flush_interval=self.config.buffer_flush_interval
+            flush_interval=self.config.buffer_flush_interval,
         )
         buffer.add_callback(callback)
         self._buffers[stream_id] = buffer
@@ -505,8 +526,13 @@ class LogStreamer:
         logger.info(f"Started buffered streaming with ID: {stream_id}")
         return stream_id
 
-    async def _run_buffered_stream(self, stream_id: str, pods: List[PodInfo],
-                                   buffer: LogBuffer, container_name: Optional[str]) -> None:
+    async def _run_buffered_stream(
+        self,
+        stream_id: str,
+        pods: List[PodInfo],
+        buffer: LogBuffer,
+        container_name: Optional[str],
+    ) -> None:
         """Run a buffered streaming session."""
         try:
             async for log_entry in self.stream_multiple_pods(pods, container_name):
@@ -556,9 +582,12 @@ class LogStreamer:
         """Get list of active stream IDs."""
         return list(self._active_streams.keys())
 
-    async def get_recent_logs(self, pods: List[PodInfo],
-                              lines: int = 100,
-                              container_name: Optional[str] = None) -> List[LogEntry]:
+    async def get_recent_logs(
+        self,
+        pods: List[PodInfo],
+        lines: int = 100,
+        container_name: Optional[str] = None,
+    ) -> List[LogEntry]:
         """
         Get recent logs from pods (non-streaming).
 
@@ -585,18 +614,18 @@ class LogStreamer:
                     namespace=pod_info.namespace,
                     container=target_container,
                     tail_lines=lines,
-                    timestamps=True
+                    timestamps=True,
                 )
 
                 # Parse log lines
-                for line in log_lines.strip().split('\n'):
+                for line in log_lines.strip().split("\n"):
                     if line.strip():
                         try:
                             log_entry = self._parse_log_line(
                                 line.strip(),
                                 pod_info.name,
                                 pod_info.namespace,
-                                target_container
+                                target_container,
                             )
                             all_logs.append(log_entry)
                         except Exception as e:
