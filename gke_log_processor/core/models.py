@@ -559,3 +559,150 @@ class StreamingStats(BaseModel):
         self.buffer_size = current_buffer_size
         self.active_pod_count = active_pods
         self.logs_per_second = current_rate
+
+
+class QueryType(str, Enum):
+    """Types of custom queries."""
+
+    SEARCH = "search"  # Simple search queries
+    ANALYSIS = "analysis"  # Analytical questions
+    TROUBLESHOOTING = "troubleshooting"  # Problem-solving queries
+    METRICS = "metrics"  # Performance and usage metrics
+    PATTERNS = "patterns"  # Pattern-based queries
+    CUSTOM = "custom"  # User-defined query types
+
+
+class QueryRequest(BaseModel):
+    """Model for custom query requests."""
+
+    id: UUID = Field(default_factory=uuid4, description="Unique query ID")
+    question: str = Field(..., description="Natural language question", min_length=1)
+    query_type: QueryType = Field(default=QueryType.ANALYSIS, description="Type of query")
+    context_filters: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Optional filters (pod names, time ranges, log levels, etc.)"
+    )
+    max_log_entries: int = Field(
+        default=100,
+        ge=1,
+        le=1000,
+        description="Maximum number of log entries to analyze"
+    )
+    enable_pattern_matching: bool = Field(
+        default=True,
+        description="Whether to include pattern detection in the query"
+    )
+    include_context: bool = Field(
+        default=True,
+        description="Whether to include analysis context in the response"
+    )
+    created_at: datetime = Field(default_factory=utc_now, description="Query creation time")
+
+    @field_validator('question')
+    @classmethod
+    def validate_question(cls, v: str) -> str:
+        """Validate question format."""
+        if len(v.strip()) < 3:
+            raise ValueError("Question must be at least 3 characters long")
+        return v.strip()
+
+
+class QueryResponse(BaseModel):
+    """Model for custom query responses."""
+
+    request_id: UUID = Field(..., description="ID of the original request")
+    answer: str = Field(..., description="AI-generated answer to the query")
+    confidence_score: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Confidence in the answer (0.0-1.0)"
+    )
+    sources_analyzed: int = Field(..., description="Number of log entries analyzed")
+    query_duration_seconds: float = Field(..., description="Time taken to process query")
+    related_patterns: List[str] = Field(
+        default_factory=list,
+        description="Related patterns found during analysis"
+    )
+    suggested_followups: List[str] = Field(
+        default_factory=list,
+        description="Suggested follow-up questions"
+    )
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional query metadata"
+    )
+    generated_at: datetime = Field(
+        default_factory=utc_now,
+        description="Response generation time"
+    )
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def is_high_confidence(self) -> bool:
+        """Check if response has high confidence."""
+        return self.confidence_score >= 0.8
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def processing_rate(self) -> float:
+        """Logs processed per second."""
+        return (
+            self.sources_analyzed / self.query_duration_seconds
+            if self.query_duration_seconds > 0 else 0
+        )
+
+
+class QueryConfig(BaseModel):
+    """Configuration for custom query processing."""
+
+    default_max_logs: int = Field(
+        default=100,
+        ge=10,
+        le=1000,
+        description="Default maximum logs to analyze"
+    )
+    confidence_threshold: float = Field(
+        default=0.6,
+        ge=0.0,
+        le=1.0,
+        description="Minimum confidence threshold for responses"
+    )
+    enable_followup_suggestions: bool = Field(
+        default=True,
+        description="Whether to generate follow-up question suggestions"
+    )
+    max_followup_suggestions: int = Field(
+        default=3,
+        ge=0,
+        le=10,
+        description="Maximum number of follow-up suggestions"
+    )
+    enable_pattern_integration: bool = Field(
+        default=True,
+        description="Whether to integrate with pattern detection"
+    )
+    query_timeout_seconds: int = Field(
+        default=30,
+        ge=5,
+        le=120,
+        description="Timeout for query processing"
+    )
+    cache_enabled: bool = Field(
+        default=True,
+        description="Whether to enable query response caching"
+    )
+    cache_ttl_minutes: int = Field(
+        default=5,
+        ge=1,
+        le=60,
+        description="Cache time-to-live in minutes"
+    )
+
+    @field_validator('confidence_threshold')
+    @classmethod
+    def validate_confidence(cls, v: float) -> float:
+        """Validate confidence threshold."""
+        if not 0.0 <= v <= 1.0:
+            raise ValueError("Confidence threshold must be between 0.0 and 1.0")
+        return v

@@ -18,11 +18,22 @@ from ..core.models import (
     LogEntry,
     LogLevel,
     PatternType,
+    QueryConfig,
+    QueryRequest,
+    QueryResponse,
+    QueryType,
     SeverityLevel,
 )
 from ..core.utils import utc_now
 from .client import GeminiClient, GeminiConfig
 from .highlighter import HighlighterConfig, HighlightTheme, SeverityHighlighter
+from .summarizer import (
+    LogSummarizer,
+    LogSummaryReport,
+    SummarizerConfig,
+    SummaryType,
+    TimeWindowSize,
+)
 
 logger = get_logger(__name__)
 
@@ -617,12 +628,14 @@ class LogAnalysisEngine:
 
     def __init__(self,
                  gemini_config: Optional[GeminiConfig] = None,
-                 highlighter_config: Optional[HighlighterConfig] = None):
+                 highlighter_config: Optional[HighlighterConfig] = None,
+                 summarizer_config: Optional[SummarizerConfig] = None):
         self.severity_detector = SeverityDetectionAlgorithm()
         self.pattern_engine = PatternRecognitionEngine()
         self.batch_processor = BatchProcessor()
         self.gemini_client = GeminiClient(gemini_config) if gemini_config else None
         self.highlighter = SeverityHighlighter(highlighter_config)
+        self.summarizer = LogSummarizer(self.gemini_client, summarizer_config)
         self.logger = get_logger(__name__)
 
     async def analyze_logs_comprehensive(
@@ -1009,3 +1022,1026 @@ class LogAnalysisEngine:
         """
         new_config = HighlighterConfig(theme=theme)
         self.highlighter.update_config(new_config)
+
+    # Advanced Pattern Detection Methods
+
+    def detect_recurring_issue_patterns(self, log_entries: List[LogEntry]) -> 'PatternDetectionResult':
+        """Detect recurring issue patterns using advanced pattern detection.
+
+        Args:
+            log_entries: List of log entries to analyze for patterns
+
+        Returns:
+            Comprehensive pattern detection results
+        """
+        from .patterns import AdvancedPatternDetector
+
+        detector = AdvancedPatternDetector()
+        return detector.detect_all_patterns(log_entries)
+
+    def analyze_pattern_trends(self, log_entries: List[LogEntry]) -> Dict[str, Any]:
+        """Analyze pattern trends and evolution over time.
+
+        Args:
+            log_entries: List of log entries to analyze
+
+        Returns:
+            Dictionary containing trend analysis results
+        """
+        from .patterns import AdvancedPatternDetector
+
+        detector = AdvancedPatternDetector()
+        patterns = detector.detect_all_patterns(log_entries)
+
+        # Analyze trends in patterns
+        trend_analysis = {
+            "total_patterns_detected": (
+                len(patterns.recurring_issues) +
+                len(patterns.temporal_patterns) +
+                len(patterns.cascade_patterns) +
+                len(patterns.anomaly_patterns)
+            ),
+            "pattern_complexity_score": patterns.overall_pattern_score,
+            "health_trend": patterns.health_trends.get("overall", "unknown"),
+            "high_impact_issues": [
+                p for p in patterns.recurring_issues
+                if p.impact_score > 70
+            ],
+            "critical_anomalies": [
+                a for a in patterns.anomaly_patterns
+                if a.deviation_score > 3.0
+            ],
+            "cascade_risk": len(patterns.cascade_patterns) > 0,
+            "prediction_confidence": self._calculate_prediction_confidence(patterns)
+        }
+
+        return trend_analysis
+
+    def get_pattern_recommendations(self, log_entries: List[LogEntry]) -> List[str]:
+        """Get actionable recommendations based on detected patterns.
+
+        Args:
+            log_entries: List of log entries to analyze
+
+        Returns:
+            List of actionable recommendations
+        """
+        from .patterns import AdvancedPatternDetector
+
+        detector = AdvancedPatternDetector()
+        patterns = detector.detect_all_patterns(log_entries)
+
+        return patterns.recommendations
+
+    def analyze_pattern_correlations(self, log_entries: List[LogEntry]) -> Dict[str, Any]:
+        """Analyze correlations between different pattern types.
+
+        Args:
+            log_entries: List of log entries to analyze
+
+        Returns:
+            Pattern correlation analysis
+        """
+        from .patterns import AdvancedPatternDetector
+
+        detector = AdvancedPatternDetector()
+        patterns = detector.detect_all_patterns(log_entries)
+
+        correlations = {
+            "recurring_temporal_correlation": self._analyze_recurring_temporal_correlation(
+                patterns.recurring_issues, patterns.temporal_patterns
+            ),
+            "cascade_triggers": self._identify_cascade_triggers(patterns.cascade_patterns),
+            "anomaly_pattern_overlap": self._analyze_anomaly_overlap(
+                patterns.anomaly_patterns, patterns.recurring_issues
+            ),
+            "severity_pattern_mapping": self._map_severity_to_patterns(patterns)
+        }
+
+        return correlations
+
+    def predict_future_issues(self, log_entries: List[LogEntry]) -> Dict[str, Any]:
+        """Predict potential future issues based on current patterns.
+
+        Args:
+            log_entries: List of log entries to analyze for predictions
+
+        Returns:
+            Predictions about potential future issues
+        """
+        from .patterns import AdvancedPatternDetector
+
+        detector = AdvancedPatternDetector()
+        patterns = detector.detect_all_patterns(log_entries)
+
+        predictions = {
+            "likely_recurring_issues": [
+                {
+                    "pattern": p.normalized_error,
+                    "predicted_frequency": p.frequency_per_hour,
+                    "confidence": 0.8 if p.trend == "increasing" else 0.6,
+                    "risk_level": "high" if p.impact_score > 70 else "medium"
+                }
+                for p in patterns.recurring_issues
+                if p.trend in ["increasing", "stable"]
+            ],
+            "cascade_risk_assessment": {
+                "risk_level": "high" if len(patterns.cascade_patterns) > 2 else "low",
+                "potential_triggers": [p.trigger_event for p in patterns.cascade_patterns],
+                "containment_success_rate": sum(
+                    1 for p in patterns.cascade_patterns if p.containment_success
+                ) / max(len(patterns.cascade_patterns), 1)
+            },
+            "volume_spike_predictions": [
+                {
+                    "type": p.pattern_type,
+                    "confidence": p.prediction_confidence,
+                    "next_occurrence": p.peak_times
+                }
+                for p in patterns.temporal_patterns
+                if p.prediction_confidence > 0.7
+            ]
+        }
+
+        return predictions
+
+    def _calculate_prediction_confidence(self, patterns: 'PatternDetectionResult') -> float:
+        """Calculate overall prediction confidence based on pattern quality."""
+        if not any([patterns.recurring_issues, patterns.temporal_patterns, patterns.cascade_patterns]):
+            return 0.0
+
+        total_confidence = 0.0
+        confidence_count = 0
+
+        # Recurring issue confidence
+        for pattern in patterns.recurring_issues:
+            if pattern.trend in ["increasing", "decreasing"]:
+                total_confidence += 0.8
+            else:
+                total_confidence += 0.6
+            confidence_count += 1
+
+        # Temporal pattern confidence
+        for pattern in patterns.temporal_patterns:
+            total_confidence += pattern.prediction_confidence
+            confidence_count += 1
+
+        # Cascade pattern confidence (lower due to complexity)
+        for pattern in patterns.cascade_patterns:
+            total_confidence += 0.5 if pattern.containment_success else 0.3
+            confidence_count += 1
+
+        return total_confidence / max(confidence_count, 1)
+
+    def _analyze_recurring_temporal_correlation(self, recurring: List, temporal: List) -> Dict[str, Any]:
+        """Analyze correlation between recurring issues and temporal patterns."""
+        if not recurring or not temporal:
+            return {"correlation": "none", "details": "Insufficient data"}
+
+        # Simple correlation analysis
+        periodic_temporal = [p for p in temporal if p.pattern_type == "periodic_errors"]
+
+        if periodic_temporal and recurring:
+            return {
+                "correlation": "possible",
+                "periodic_patterns": len(periodic_temporal),
+                "recurring_issues": len(recurring),
+                "details": "Both periodic and recurring patterns detected"
+            }
+
+        return {"correlation": "weak", "details": "No clear correlation detected"}
+
+    def _identify_cascade_triggers(self, cascades: List) -> List[str]:
+        """Identify common cascade trigger events."""
+        if not cascades:
+            return []
+
+        triggers = [cascade.trigger_event for cascade in cascades]
+        return list(set(triggers))
+
+    def _analyze_anomaly_overlap(self, anomalies: List, recurring: List) -> Dict[str, Any]:
+        """Analyze overlap between anomalies and recurring patterns."""
+        if not anomalies or not recurring:
+            return {"overlap": "none"}
+
+        # Check for timing overlaps or similar components
+        overlap_count = 0
+        for anomaly in anomalies:
+            for recur in recurring:
+                if any(pod in recur.affected_pods for pod in anomaly.affected_components):
+                    overlap_count += 1
+                    break
+
+        return {
+            "overlap": "significant" if overlap_count > len(anomalies) / 2 else "minimal",
+            "overlap_count": overlap_count,
+            "total_anomalies": len(anomalies)
+        }
+
+    def _map_severity_to_patterns(self, patterns: 'PatternDetectionResult') -> Dict[str, int]:
+        """Map severity levels to pattern types."""
+        severity_mapping = {
+            "high_severity_recurring": len([
+                p for p in patterns.recurring_issues
+                if p.impact_score > 70
+            ]),
+            "critical_anomalies": len([
+                a for a in patterns.anomaly_patterns
+                if a.deviation_score > 3.0
+            ]),
+            "cascade_failures": len(patterns.cascade_patterns),
+            "temporal_issues": len([
+                p for p in patterns.temporal_patterns
+                if p.pattern_type in ["volume_spike", "burst_pattern"]
+            ])
+        }
+
+        return severity_mapping
+
+    # Smart Summary Integration Methods
+
+    async def generate_smart_summary(
+        self,
+        log_entries: List[LogEntry],
+        config: Optional[SummarizerConfig] = None
+    ) -> LogSummaryReport:
+        """Generate comprehensive smart summary with configurable time windows.
+
+        Args:
+            log_entries: List of log entries to summarize
+            config: Optional summarizer configuration override
+
+        Returns:
+            Complete log summary report with time-window analysis
+        """
+        effective_config = config or self.summarizer.config
+        self.logger.info(
+            f"Generating smart summary for {len(log_entries)} log entries "
+            f"with {effective_config.window_size.value} windows"
+        )
+
+        return await self.summarizer.summarize_logs(log_entries, effective_config)
+
+    async def generate_executive_summary(
+        self,
+        log_entries: List[LogEntry],
+        window_size: TimeWindowSize = TimeWindowSize.ONE_HOUR
+    ) -> str:
+        """Generate executive-level summary for management reporting.
+
+        Args:
+            log_entries: List of log entries to summarize
+            window_size: Time window size for analysis
+
+        Returns:
+            Executive summary text suitable for management
+        """
+        config = SummarizerConfig(
+            window_size=window_size,
+            summary_type=SummaryType.EXECUTIVE,
+            max_summary_length=800,
+            enable_trend_analysis=True
+        )
+
+        summary_report = await self.summarizer.summarize_logs(log_entries, config)
+        return summary_report.executive_summary
+
+    async def generate_technical_summary(
+        self,
+        log_entries: List[LogEntry],
+        window_size: TimeWindowSize = TimeWindowSize.FIFTEEN_MINUTES
+    ) -> Dict[str, Any]:
+        """Generate detailed technical summary for engineers.
+
+        Args:
+            log_entries: List of log entries to summarize
+            window_size: Time window size for analysis
+
+        Returns:
+            Dictionary containing technical analysis details
+        """
+        config = SummarizerConfig(
+            window_size=window_size,
+            summary_type=SummaryType.TECHNICAL,
+            max_insights=15,
+            min_confidence=0.5,
+            enable_trend_analysis=True
+        )
+
+        summary_report = await self.summarizer.summarize_logs(log_entries, config)
+
+        return {
+            "time_range": {
+                "start": summary_report.time_range_start,
+                "end": summary_report.time_range_end,
+                "duration_minutes": (
+                    summary_report.time_range_end - summary_report.time_range_start
+                ).total_seconds() / 60
+            },
+            "overview": {
+                "total_logs": summary_report.total_log_entries,
+                "time_windows": len(summary_report.window_summaries),
+                "window_size": window_size.value,
+                "key_insights_count": len(summary_report.key_insights),
+                "trends_detected": len(summary_report.trend_analyses)
+            },
+            "window_summaries": [
+                {
+                    "start_time": window.start_time,
+                    "end_time": window.end_time,
+                    "log_count": window.log_count,
+                    "error_count": window.error_count,
+                    "warning_count": window.warning_count,
+                    "severity": window.overall_severity.value,
+                    "summary": window.summary_text,
+                    "key_events": window.key_events,
+                    "top_errors": window.top_errors
+                }
+                for window in summary_report.window_summaries
+            ],
+            "key_insights": [
+                {
+                    "title": insight.title,
+                    "description": insight.description,
+                    "severity": insight.severity.value,
+                    "confidence": insight.confidence,
+                    "recommendation": insight.recommendation,
+                    "affected_windows_count": len(insight.affected_windows)
+                }
+                for insight in summary_report.key_insights
+            ],
+            "trend_analyses": [
+                {
+                    "metric": trend.metric_name,
+                    "direction": trend.direction.value,
+                    "confidence": trend.confidence,
+                    "change_percentage": trend.change_percentage,
+                    "recommendation": trend.recommendation
+                }
+                for trend in summary_report.trend_analyses
+            ],
+            "executive_summary": summary_report.executive_summary,
+            "recommendations": summary_report.recommendations,
+            "generated_at": summary_report.generated_at
+        }
+
+    async def generate_operational_summary(
+        self,
+        log_entries: List[LogEntry],
+        window_size: TimeWindowSize = TimeWindowSize.THIRTY_MINUTES
+    ) -> Dict[str, Any]:
+        """Generate operational summary focusing on system health.
+
+        Args:
+            log_entries: List of log entries to summarize
+            window_size: Time window size for analysis
+
+        Returns:
+            Dictionary containing operational health metrics
+        """
+        config = SummarizerConfig(
+            window_size=window_size,
+            summary_type=SummaryType.OPERATIONAL,
+            max_insights=10,
+            min_confidence=0.6,
+            enable_trend_analysis=True
+        )
+
+        summary_report = await self.summarizer.summarize_logs(log_entries, config)
+
+        # Calculate operational health metrics
+        total_windows = len(summary_report.window_summaries)
+        error_windows = sum(1 for w in summary_report.window_summaries if w.error_count > 0)
+        warning_windows = sum(1 for w in summary_report.window_summaries if w.warning_count > 0)
+        healthy_windows = total_windows - error_windows - warning_windows
+
+        health_score = (healthy_windows / max(total_windows, 1)) * 100
+
+        critical_insights = [
+            insight for insight in summary_report.key_insights
+            if insight.severity == SeverityLevel.CRITICAL
+        ]
+        high_insights = [
+            insight for insight in summary_report.key_insights
+            if insight.severity == SeverityLevel.HIGH
+        ]
+
+        return {
+            "health_overview": {
+                "overall_health_score": round(health_score, 1),
+                "status": (
+                    "healthy" if health_score > 80 else
+                    "warning" if health_score > 60 else
+                    "critical"
+                ),
+                "total_time_windows": total_windows,
+                "healthy_windows": healthy_windows,
+                "warning_windows": warning_windows,
+                "error_windows": error_windows
+            },
+            "critical_issues": [
+                {
+                    "title": insight.title,
+                    "description": insight.description,
+                    "confidence": insight.confidence,
+                    "recommendation": insight.recommendation
+                }
+                for insight in critical_insights
+            ],
+            "high_priority_issues": [
+                {
+                    "title": insight.title,
+                    "description": insight.description,
+                    "confidence": insight.confidence
+                }
+                for insight in high_insights
+            ],
+            "trending_issues": [
+                {
+                    "metric": trend.metric_name,
+                    "direction": trend.direction.value,
+                    "change": trend.change_percentage,
+                    "recommendation": trend.recommendation
+                }
+                for trend in summary_report.trend_analyses
+                if trend.direction.value in ["increasing", "decreasing"]
+            ],
+            "immediate_actions": [
+                rec for rec in summary_report.recommendations
+                if any(keyword in rec.lower() for keyword in ["immediate", "urgent", "critical"])
+            ],
+            "summary": summary_report.executive_summary,
+            "analysis_period": {
+                "start": summary_report.time_range_start,
+                "end": summary_report.time_range_end,
+                "window_size": window_size.value
+            }
+        }
+
+    async def generate_custom_summary(
+        self,
+        log_entries: List[LogEntry],
+        window_size: TimeWindowSize,
+        summary_type: SummaryType,
+        max_insights: int = 10,
+        min_confidence: float = 0.6,
+        enable_ai: bool = True
+    ) -> LogSummaryReport:
+        """Generate custom summary with specific configuration.
+
+        Args:
+            log_entries: List of log entries to summarize
+            window_size: Size of time windows for analysis
+            summary_type: Type of summary to generate
+            max_insights: Maximum number of insights to include
+            min_confidence: Minimum confidence threshold for insights
+            enable_ai: Whether to enable AI-powered summarization
+
+        Returns:
+            Complete summary report with custom configuration
+        """
+        config = SummarizerConfig(
+            window_size=window_size,
+            summary_type=summary_type,
+            max_insights=max_insights,
+            min_confidence=min_confidence,
+            enable_ai_summarization=enable_ai,
+            enable_trend_analysis=True
+        )
+
+        self.logger.info(
+            f"Generating custom summary: {summary_type.value} style, "
+            f"{window_size.value} windows, max {max_insights} insights"
+        )
+
+        return await self.summarizer.summarize_logs(log_entries, config)
+
+    def get_available_window_sizes(self) -> List[TimeWindowSize]:
+        """Get list of available time window sizes for summarization.
+
+        Returns:
+            List of supported time window sizes
+        """
+        return list(TimeWindowSize)
+
+    def get_available_summary_types(self) -> List[SummaryType]:
+        """Get list of available summary types.
+
+        Returns:
+            List of supported summary types
+        """
+        return list(SummaryType)
+
+    async def analyze_with_smart_summary(
+        self,
+        log_entries: List[LogEntry],
+        window_size: TimeWindowSize = TimeWindowSize.FIFTEEN_MINUTES,
+        include_analysis: bool = True
+    ) -> Dict[str, Any]:
+        """Perform comprehensive analysis with smart summarization.
+
+        Args:
+            log_entries: List of log entries to analyze
+            window_size: Time window size for summarization
+            include_analysis: Whether to include full analysis results
+
+        Returns:
+            Dictionary containing both analysis and summary results
+        """
+        results = {"timestamp": utc_now()}
+
+        # Generate smart summary
+        summary_config = SummarizerConfig(
+            window_size=window_size,
+            summary_type=SummaryType.TECHNICAL,
+            enable_trend_analysis=True
+        )
+
+        summary_report = await self.summarizer.summarize_logs(log_entries, summary_config)
+        results["smart_summary"] = {
+            "executive_summary": summary_report.executive_summary,
+            "time_windows": len(summary_report.window_summaries),
+            "key_insights_count": len(summary_report.key_insights),
+            "recommendations": summary_report.recommendations,
+            "trend_analyses": len(summary_report.trend_analyses)
+        }
+
+        # Include full analysis if requested
+        if include_analysis:
+            analysis_result = await self.analyze_logs_comprehensive(log_entries)
+            results["analysis"] = {
+                "overall_severity": analysis_result.overall_severity.value,
+                "confidence_score": analysis_result.confidence_score,
+                "patterns_detected": len(analysis_result.detected_patterns),
+                "error_rate": analysis_result.error_rate,
+                "warning_rate": analysis_result.warning_rate,
+                "top_errors": analysis_result.top_error_messages,
+                "analysis_duration": analysis_result.analysis_duration_seconds
+            }
+
+        return results
+
+    def update_summarizer_config(self, config: SummarizerConfig):
+        """Update the summarizer configuration.
+
+        Args:
+            config: New summarizer configuration
+        """
+        self.summarizer.config = config
+        self.logger.info(
+            f"Updated summarizer config: {config.window_size.value} windows, "
+            f"{config.summary_type.value} style"
+        )
+
+    # Custom Query Methods
+
+    async def query_logs_natural_language(
+        self,
+        log_entries: List[LogEntry],
+        request: 'QueryRequest'
+    ) -> 'QueryResponse':
+        """Process a natural language query against log entries.
+
+        Args:
+            log_entries: List of log entries to query against
+            request: QueryRequest containing the natural language question
+
+        Returns:
+            QueryResponse with AI-generated answer and metadata
+        """
+        from ..core.models import QueryResponse
+
+        if not self.gemini_client:
+            raise ValueError("Gemini client not available for natural language queries")
+
+        start_time = utc_now()
+        self.logger.info(
+            f"Processing natural language query: '{request.question}' "
+            f"against {len(log_entries)} log entries"
+        )
+
+        # Apply filters if specified
+        filtered_logs = self._apply_query_filters(log_entries, request.context_filters)
+
+        # Limit log entries to prevent token overflow
+        analysis_logs = filtered_logs[:request.max_log_entries]
+
+        try:
+            # Get AI answer
+            answer = await self.gemini_client.query_logs(analysis_logs, request.question)
+
+            # Calculate confidence score based on various factors
+            confidence_score = self._calculate_query_confidence(
+                answer, analysis_logs, request
+            )
+
+            # Find related patterns if enabled
+            related_patterns = []
+            if request.enable_pattern_matching and len(analysis_logs) > 0:
+                patterns = await self._detect_all_patterns(analysis_logs)
+                related_patterns = [
+                    f"{p.type.value}: {p.pattern}" for p in patterns[:5]
+                ]
+
+            # Generate follow-up suggestions
+            followups = self._generate_followup_questions(
+                request.question, answer, request.query_type
+            ) if request.include_context else []
+
+            # Calculate processing time
+            duration = (utc_now() - start_time).total_seconds()
+
+            response = QueryResponse(
+                request_id=request.id,
+                answer=answer,
+                confidence_score=confidence_score,
+                sources_analyzed=len(analysis_logs),
+                query_duration_seconds=duration,
+                related_patterns=related_patterns,
+                suggested_followups=followups,
+                metadata={
+                    "query_type": request.query_type.value,
+                    "total_available_logs": len(filtered_logs),
+                    "filters_applied": bool(request.context_filters),
+                    "pattern_matching_enabled": request.enable_pattern_matching,
+                    "ai_model": "gemini",
+                }
+            )
+
+            self.logger.info(
+                f"Query processed: {len(analysis_logs)} logs, "
+                f"confidence {confidence_score:.2f}, {duration:.2f}s"
+            )
+
+            return response
+
+        except Exception as e:
+            self.logger.error(f"Natural language query failed: {e}")
+            # Return error response
+            duration = (utc_now() - start_time).total_seconds()
+            return QueryResponse(
+                request_id=request.id,
+                answer=f"Sorry, I couldn't process your query: {str(e)}",
+                confidence_score=0.0,
+                sources_analyzed=len(analysis_logs),
+                query_duration_seconds=duration,
+                metadata={"error": str(e), "query_type": request.query_type.value}
+            )
+
+    async def analyze_with_query(
+        self,
+        log_entries: List[LogEntry],
+        question: str,
+        include_analysis: bool = True,
+        query_type: 'QueryType' = None
+    ) -> Dict[str, Any]:
+        """Perform analysis combined with a natural language query.
+
+        Args:
+            log_entries: List of log entries to analyze and query
+            question: Natural language question
+            include_analysis: Whether to include comprehensive analysis
+            query_type: Type of query being performed
+
+        Returns:
+            Combined analysis and query results
+        """
+        from ..core.models import QueryRequest, QueryType
+
+        if query_type is None:
+            query_type = QueryType.ANALYSIS
+
+        self.logger.info(
+            f"Performing combined analysis and query on {len(log_entries)} logs"
+        )
+
+        results = {}
+
+        # Perform comprehensive analysis if requested
+        if include_analysis:
+            analysis_result = await self.analyze_logs_comprehensive(log_entries)
+            results["analysis"] = {
+                "overall_severity": analysis_result.overall_severity.value,
+                "confidence_score": analysis_result.confidence_score,
+                "patterns_detected": len(analysis_result.detected_patterns),
+                "error_rate": analysis_result.error_rate,
+                "warning_rate": analysis_result.warning_rate,
+                "recommendations": analysis_result.recommendations,
+                "analysis_duration": analysis_result.analysis_duration_seconds
+            }
+
+        # Process natural language query
+        query_request = QueryRequest(
+            question=question,
+            query_type=query_type,
+            max_log_entries=min(len(log_entries), 100),
+            enable_pattern_matching=True,
+            include_context=True
+        )
+
+        query_response = await self.query_logs_natural_language(log_entries, query_request)
+        results["query"] = {
+            "question": question,
+            "answer": query_response.answer,
+            "confidence": query_response.confidence_score,
+            "sources_analyzed": query_response.sources_analyzed,
+            "duration": query_response.query_duration_seconds,
+            "related_patterns": query_response.related_patterns,
+            "followup_suggestions": query_response.suggested_followups
+        }
+
+        # Add correlation insights
+        if include_analysis and "analysis" in results:
+            results["insights"] = self._correlate_analysis_with_query(
+                results["analysis"], results["query"]
+            )
+
+        return results
+
+    async def batch_query_logs(
+        self,
+        log_entries: List[LogEntry],
+        questions: List[str],
+        query_config: 'QueryConfig' = None
+    ) -> Dict[str, 'QueryResponse']:
+        """Process multiple natural language queries in batch.
+
+        Args:
+            log_entries: List of log entries to query against
+            questions: List of natural language questions
+            query_config: Optional query configuration
+
+        Returns:
+            Dictionary mapping questions to their responses
+        """
+        from ..core.models import QueryConfig, QueryRequest, QueryType
+
+        if query_config is None:
+            from ..core.models import QueryConfig
+            query_config = QueryConfig()
+
+        self.logger.info(
+            f"Processing {len(questions)} batch queries against {len(log_entries)} logs"
+        )
+
+        results = {}
+
+        for i, question in enumerate(questions, 1):
+            self.logger.debug(f"Processing batch query {i}/{len(questions)}: {question}")
+
+            request = QueryRequest(
+                question=question,
+                query_type=QueryType.ANALYSIS,
+                max_log_entries=query_config.default_max_logs,
+                enable_pattern_matching=query_config.enable_pattern_integration,
+                include_context=query_config.enable_followup_suggestions
+            )
+
+            try:
+                response = await self.query_logs_natural_language(log_entries, request)
+                results[question] = response
+            except Exception as e:
+                self.logger.error(f"Batch query failed for '{question}': {e}")
+                results[question] = QueryResponse(
+                    request_id=request.id,
+                    answer=f"Query failed: {str(e)}",
+                    confidence_score=0.0,
+                    sources_analyzed=0,
+                    query_duration_seconds=0.0,
+                    metadata={"error": str(e), "batch_index": i}
+                )
+
+        return results
+
+    def validate_query_request(self, request: 'QueryRequest') -> List[str]:
+        """Validate a query request and return any issues.
+
+        Args:
+            request: QueryRequest to validate
+
+        Returns:
+            List of validation error messages (empty if valid)
+        """
+        issues = []
+
+        if len(request.question.strip()) < 3:
+            issues.append("Question must be at least 3 characters long")
+
+        if request.max_log_entries < 1:
+            issues.append("max_log_entries must be at least 1")
+
+        if request.max_log_entries > 1000:
+            issues.append("max_log_entries cannot exceed 1000")
+
+        # Check if Gemini client is available for AI queries
+        if not self.gemini_client:
+            issues.append("AI client not available for natural language queries")
+
+        return issues
+
+    def _apply_query_filters(
+        self,
+        log_entries: List[LogEntry],
+        filters: Dict[str, Any]
+    ) -> List[LogEntry]:
+        """Apply context filters to log entries.
+
+        Args:
+            log_entries: Original log entries
+            filters: Filter criteria
+
+        Returns:
+            Filtered log entries
+        """
+        if not filters:
+            return log_entries
+
+        filtered = log_entries
+
+        # Filter by pod names
+        if "pod_names" in filters:
+            pod_names = set(filters["pod_names"])
+            filtered = [log for log in filtered if log.pod_name in pod_names]
+
+        # Filter by log levels
+        if "log_levels" in filters:
+            log_levels = set(filters["log_levels"])
+            filtered = [log for log in filtered if log.level and log.level in log_levels]
+
+        # Filter by time range
+        if "start_time" in filters:
+            start_time = filters["start_time"]
+            filtered = [log for log in filtered if log.timestamp >= start_time]
+
+        if "end_time" in filters:
+            end_time = filters["end_time"]
+            filtered = [log for log in filtered if log.timestamp <= end_time]
+
+        # Filter by message content
+        if "message_contains" in filters:
+            keywords = filters["message_contains"]
+            if isinstance(keywords, str):
+                keywords = [keywords]
+            filtered = [
+                log for log in filtered
+                if any(keyword.lower() in log.message.lower() for keyword in keywords)
+            ]
+
+        return filtered
+
+    def _calculate_query_confidence(
+        self,
+        answer: str,
+        log_entries: List[LogEntry],
+        request: 'QueryRequest'
+    ) -> float:
+        """Calculate confidence score for query response.
+
+        Args:
+            answer: AI-generated answer
+            log_entries: Log entries analyzed
+            request: Original query request
+
+        Returns:
+            Confidence score between 0.0 and 1.0
+        """
+        base_confidence = 0.7
+
+        # Increase confidence based on number of logs analyzed
+        log_factor = min(len(log_entries) / 50, 1.0) * 0.1
+        base_confidence += log_factor
+
+        # Decrease confidence for very short answers
+        if len(answer.split()) < 10:
+            base_confidence -= 0.2
+
+        # Increase confidence for structured answers
+        if any(marker in answer.lower() for marker in ["1.", "2.", "•", "-", ":"]):
+            base_confidence += 0.1
+
+        # Check for uncertainty indicators
+        uncertainty_markers = ["maybe", "possibly", "might", "unclear", "not sure", "hard to tell"]
+        if any(marker in answer.lower() for marker in uncertainty_markers):
+            base_confidence -= 0.2
+
+        # Adjust for specific query types
+        if request.query_type in ['QueryType.METRICS', 'QueryType.SEARCH']:
+            base_confidence += 0.05
+        elif request.query_type == 'QueryType.TROUBLESHOOTING':
+            base_confidence -= 0.05
+
+        return max(0.0, min(1.0, base_confidence))
+
+    def _generate_followup_questions(
+        self,
+        original_question: str,
+        answer: str,
+        query_type: 'QueryType'
+    ) -> List[str]:
+        """Generate suggested follow-up questions.
+
+        Args:
+            original_question: The original question asked
+            answer: The AI-generated answer
+            query_type: Type of the original query
+
+        Returns:
+            List of suggested follow-up questions
+        """
+        followups = []
+
+        # Generic follow-ups based on query type
+        if 'QueryType.TROUBLESHOOTING' in str(query_type):
+            followups.extend([
+                "What are the root causes of these issues?",
+                "How can I prevent these problems in the future?",
+                "Are there any patterns in when these issues occur?"
+            ])
+        elif 'QueryType.METRICS' in str(query_type):
+            followups.extend([
+                "What are the performance trends over time?",
+                "Which pods are performing best and worst?",
+                "Are there any resource bottlenecks?"
+            ])
+        elif 'QueryType.ANALYSIS' in str(query_type):
+            followups.extend([
+                "What are the most critical issues to address first?",
+                "How do these issues impact overall system health?",
+                "What monitoring should be put in place?"
+            ])
+
+        # Context-specific follow-ups based on answer content
+        if "error" in answer.lower():
+            followups.append("What specific error patterns should I watch for?")
+        if "performance" in answer.lower():
+            followups.append("What's causing the performance degradation?")
+        if "pod" in answer.lower():
+            followups.append("Which pods are most affected?")
+
+        return followups[:3]  # Limit to 3 suggestions
+
+    def _correlate_analysis_with_query(
+        self,
+        analysis_results: Dict[str, Any],
+        query_results: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Correlate comprehensive analysis with query results.
+
+        Args:
+            analysis_results: Results from comprehensive analysis
+            query_results: Results from natural language query
+
+        Returns:
+            Correlation insights
+        """
+        insights = {
+            "correlation_score": 0.0,
+            "analysis_query_alignment": "unknown",
+            "confidence_correlation": 0.0,
+            "insights": []
+        }
+
+        # Calculate correlation between analysis severity and query confidence
+        analysis_confidence = analysis_results.get("confidence_score", 0.0)
+        query_confidence = query_results.get("confidence", 0.0)
+        insights["confidence_correlation"] = abs(analysis_confidence - query_confidence)
+
+        # Check alignment between analysis findings and query answer
+        analysis_severity = analysis_results.get("overall_severity", "unknown")
+        query_answer = query_results.get("answer", "").lower()
+
+        if analysis_severity in ["high", "critical"] and any(
+            term in query_answer for term in ["serious", "critical", "urgent", "error", "problem"]
+        ):
+            insights["analysis_query_alignment"] = "strong"
+            insights["correlation_score"] = 0.8
+        elif analysis_severity in ["medium"] and any(
+            term in query_answer for term in ["moderate", "concern", "warning"]
+        ):
+            insights["analysis_query_alignment"] = "good"
+            insights["correlation_score"] = 0.6
+        elif analysis_severity == "low" and not any(
+            term in query_answer for term in ["error", "problem", "critical", "serious"]
+        ):
+            insights["analysis_query_alignment"] = "good"
+            insights["correlation_score"] = 0.7
+        else:
+            insights["analysis_query_alignment"] = "weak"
+            insights["correlation_score"] = 0.3
+
+        # Add specific insights
+        if insights["correlation_score"] > 0.7:
+            insights["insights"].append(
+                "Analysis and query results are well-aligned, increasing confidence in findings"
+            )
+        elif insights["correlation_score"] < 0.4:
+            insights["insights"].append(
+                "Analysis and query results show some discrepancy, consider additional investigation"
+            )
+
+        if analysis_results.get("patterns_detected", 0) > 0 and query_results.get("related_patterns"):
+            insights["insights"].append(
+                "Detected patterns correlate with query findings, supporting analysis reliability"
+            )
+
+        return insights
