@@ -26,9 +26,7 @@ class TestClusterConfig:
     def test_valid_zonal_cluster(self):
         """Test creating a valid zonal cluster configuration."""
         config = ClusterConfig(
-            name="test-cluster",
-            project_id="test-project",
-            zone="us-central1-a"
+            name="test-cluster", project_id="test-project", zone="us-central1-a"
         )
 
         assert config.name == "test-cluster"
@@ -41,9 +39,7 @@ class TestClusterConfig:
     def test_valid_regional_cluster(self):
         """Test creating a valid regional cluster configuration."""
         config = ClusterConfig(
-            name="test-cluster",
-            project_id="test-project",
-            region="us-central1"
+            name="test-cluster", project_id="test-project", region="us-central1"
         )
 
         assert config.region == "us-central1"
@@ -54,10 +50,7 @@ class TestClusterConfig:
     def test_invalid_no_location(self):
         """Test validation error when neither zone nor region is specified."""
         with pytest.raises(ValidationError):
-            ClusterConfig(
-                name="test-cluster",
-                project_id="test-project"
-            )
+            ClusterConfig(name="test-cluster", project_id="test-project")
 
     def test_invalid_both_locations(self):
         """Test validation error when both zone and region are specified."""
@@ -66,7 +59,7 @@ class TestClusterConfig:
                 name="test-cluster",
                 project_id="test-project",
                 zone="us-central1-a",
-                region="us-central1"
+                region="us-central1",
             )
 
 
@@ -175,10 +168,7 @@ class TestConfig:
         test_data = {
             "simple": "$HOME",
             "braces": "${USER}",
-            "nested": {
-                "path": "$HOME/test",
-                "list": ["$HOME", "${USER}"]
-            }
+            "nested": {"path": "$HOME/test", "list": ["$HOME", "${USER}"]},
         }
 
         with patch.dict(os.environ, {"HOME": "/home/test", "USER": "testuser"}):
@@ -215,7 +205,7 @@ streaming:
   follow_logs: false
 """
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             temp_path = f.name
 
@@ -255,16 +245,19 @@ gemini:
   api_key: ${GEMINI_API_KEY}
 """
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             temp_path = f.name
 
         try:
-            with patch.dict(os.environ, {
-                "CLUSTER_NAME": "my-cluster",
-                "PROJECT_ID": "my-project",
-                "GEMINI_API_KEY": "test-key"
-            }):
+            with patch.dict(
+                os.environ,
+                {
+                    "CLUSTER_NAME": "my-cluster",
+                    "PROJECT_ID": "my-project",
+                    "GEMINI_API_KEY": "test-key",
+                },
+            ):
                 config = Config.load_from_file(temp_path)
 
             cluster = config.clusters[0]
@@ -283,7 +276,7 @@ gemini:
     def test_find_config_file(self):
         """Test finding configuration files in search paths."""
         # Test with existing file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             temp_path = f.name
 
         try:
@@ -303,15 +296,13 @@ gemini:
         config = Config()
         config.clusters = [
             ClusterConfig(
-                name="test-cluster",
-                project_id="test-project",
-                zone="us-central1-a"
+                name="test-cluster", project_id="test-project", zone="us-central1-a"
             )
         ]
         config.gemini.model = "gemini-pro"
         config.ui.theme = "light"
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             temp_path = f.name
 
         try:
@@ -334,7 +325,7 @@ gemini:
 
     def test_create_template(self):
         """Test creating a configuration template."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             temp_path = f.name
 
         try:
@@ -345,7 +336,7 @@ gemini:
             assert os.path.exists(temp_path)
 
             # Check that the template contains expected content
-            with open(temp_path, 'r') as f:
+            with open(temp_path, "r") as f:
                 content = f.read()
 
             assert "# GKE Log Processor Configuration" in content
@@ -372,15 +363,12 @@ logging:
   level: INFO
 """
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             temp_path = f.name
 
         try:
-            overrides = {
-                "verbose": True,
-                "namespace": "production"
-            }
+            overrides = {"verbose": True, "namespace": "production"}
 
             config = Config.load_with_overrides(temp_path, overrides)
 

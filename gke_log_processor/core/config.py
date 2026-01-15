@@ -25,7 +25,7 @@ class ClusterConfig(BaseModel):
     region: Optional[str] = Field(None, description="GKE cluster region")
     namespace: str = Field("default", description="Kubernetes namespace")
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_location(self):
         """Validate that either zone or region is provided, but not both."""
         if not self.zone and not self.region:
@@ -53,32 +53,33 @@ class GeminiConfig(BaseModel):
     api_key: Optional[str] = Field(None, description="Gemini AI API key")
     model: str = Field("gemini-pro", description="Gemini model to use")
     temperature: float = Field(
-        0.1,
-        ge=0.0,
-        le=2.0,
-        description="Temperature for AI responses")
-    max_tokens: int = Field(
-        1000, gt=0, description="Maximum tokens for AI responses")
+        0.1, ge=0.0, le=2.0, description="Temperature for AI responses"
+    )
+    max_tokens: int = Field(1000, gt=0, description="Maximum tokens for AI responses")
 
 
 class LoggingConfig(BaseModel):
     """Configuration for application logging."""
 
-    level: str = Field("INFO", description="Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)")
+    level: str = Field(
+        "INFO", description="Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)"
+    )
     format: str = Field(
         "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        description="Log message format"
+        description="Log message format",
     )
-    file: Optional[str] = Field(None, description="Log file path (if None, logs to console only)")
+    file: Optional[str] = Field(
+        None, description="Log file path (if None, logs to console only)"
+    )
     max_size: int = Field(10, description="Maximum log file size in MB")
     backup_count: int = Field(5, description="Number of backup log files to keep")
     console: bool = Field(True, description="Enable console logging")
 
-    @field_validator('level')
+    @field_validator("level")
     @classmethod
     def validate_log_level(cls, v):
         """Validate log level."""
-        valid_levels = {'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'}
+        valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
         if v.upper() not in valid_levels:
             raise ValueError(f"Log level must be one of: {', '.join(valid_levels)}")
         return v.upper()
@@ -87,11 +88,19 @@ class LoggingConfig(BaseModel):
 class StreamingConfig(BaseModel):
     """Configuration for log streaming."""
 
-    max_buffer_size: int = Field(1000, gt=0, description="Maximum buffer size for log entries")
-    buffer_flush_interval: float = Field(1.0, gt=0, description="Buffer flush interval in seconds")
-    max_logs_per_second: float = Field(100.0, gt=0, description="Maximum logs per second rate limit")
+    max_buffer_size: int = Field(
+        1000, gt=0, description="Maximum buffer size for log entries"
+    )
+    buffer_flush_interval: float = Field(
+        1.0, gt=0, description="Buffer flush interval in seconds"
+    )
+    max_logs_per_second: float = Field(
+        100.0, gt=0, description="Maximum logs per second rate limit"
+    )
     follow_logs: bool = Field(True, description="Follow new logs in real-time")
-    tail_lines: int = Field(100, ge=0, description="Number of recent log lines to fetch initially")
+    tail_lines: int = Field(
+        100, ge=0, description="Number of recent log lines to fetch initially"
+    )
     timestamps: bool = Field(True, description="Include timestamps in log parsing")
 
 
@@ -99,18 +108,16 @@ class UIConfig(BaseModel):
     """Configuration for the user interface."""
 
     theme: str = Field("dark", description="UI theme (dark/light)")
-    refresh_rate: int = Field(
-        1000, gt=0, description="Refresh rate in milliseconds")
-    max_log_lines: int = Field(
-        1000, gt=0, description="Maximum log lines to display")
+    refresh_rate: int = Field(1000, gt=0, description="Refresh rate in milliseconds")
+    max_log_lines: int = Field(1000, gt=0, description="Maximum log lines to display")
     show_timestamps: bool = Field(True, description="Show timestamps in UI")
     auto_scroll: bool = Field(True, description="Auto-scroll to new log entries")
 
-    @field_validator('theme')
+    @field_validator("theme")
     @classmethod
     def validate_theme(cls, v):
         """Validate UI theme."""
-        if v.lower() not in ['dark', 'light']:
+        if v.lower() not in ["dark", "light"]:
             raise ValueError("Theme must be 'dark' or 'light'")
         return v.lower()
 
@@ -123,7 +130,7 @@ class Config(BaseSettings):
         env_file_encoding="utf-8",
         env_nested_delimiter="__",
         case_sensitive=False,
-        extra="ignore"
+        extra="ignore",
     )
 
     # CLI arguments (these will be set programmatically)
@@ -132,30 +139,32 @@ class Config(BaseSettings):
     zone: Optional[str] = Field(None, description="GKE cluster zone")
     region: Optional[str] = Field(None, description="GKE cluster region")
     namespace: str = Field("default", description="Kubernetes namespace")
-    config_file: Optional[str] = Field(
-        None, description="Path to configuration file")
+    config_file: Optional[str] = Field(None, description="Path to configuration file")
     verbose: bool = Field(False, description="Enable verbose logging")
 
     # Configuration from file/environment
     clusters: List[ClusterConfig] = Field(
-        default_factory=list,
-        description="Predefined clusters")
+        default_factory=list, description="Predefined clusters"
+    )
     gemini: GeminiConfig = Field(
         default_factory=lambda: GeminiConfig(),  # type: ignore[arg-type, call-arg]
-        description="Gemini AI configuration")
+        description="Gemini AI configuration",
+    )
     ui: UIConfig = Field(
         default_factory=lambda: UIConfig(),  # type: ignore[arg-type, call-arg]
-        description="UI configuration")
+        description="UI configuration",
+    )
     logging: LoggingConfig = Field(
         default_factory=lambda: LoggingConfig(),  # type: ignore[arg-type, call-arg]
-        description="Logging configuration")
+        description="Logging configuration",
+    )
     streaming: StreamingConfig = Field(
         default_factory=lambda: StreamingConfig(),  # type: ignore[arg-type, call-arg]
-        description="Log streaming configuration")
+        description="Log streaming configuration",
+    )
 
     # Environment variables (using pydantic-settings automatic env detection)
-    gemini_api_key: Optional[str] = Field(
-        default=None, description="Gemini AI API key")
+    gemini_api_key: Optional[str] = Field(default=None, description="Gemini AI API key")
     google_application_credentials: Optional[str] = Field(
         default=None, description="GCP service account key path"
     )
@@ -168,12 +177,12 @@ class Config(BaseSettings):
             "~/.config/gke-logs/config.yaml",
             "~/.config/gke-logs/config.yml",
             "/etc/gke-logs/config.yaml",
-            "/etc/gke-logs/config.yml"
+            "/etc/gke-logs/config.yml",
         ],
-        description="Paths to search for configuration files"
+        description="Paths to search for configuration files",
     )
 
-    @field_validator('cluster_name', 'project_id')
+    @field_validator("cluster_name", "project_id")
     @classmethod
     def validate_required_if_set(cls, v):
         """Validate required fields if they are set."""
@@ -193,7 +202,7 @@ class Config(BaseSettings):
             project_id=self.project_id,
             zone=self.zone,
             region=self.region,
-            namespace=self.namespace
+            namespace=self.namespace,
         )
 
     @computed_field  # type: ignore[prop-decorator]
@@ -219,26 +228,26 @@ class Config(BaseSettings):
 
     @classmethod
     def _load_yaml_file(cls, config_path: Union[str, Path]) -> Dict[str, Any]:
-        """Load and parse a YAML configuration file with environment variable expansion."""
+        """Load and parse YAML configuration with environment variable expansion."""
         config_file = Path(config_path).expanduser().resolve()
 
         if not config_file.exists():
-            raise FileNotFoundError(
-                f"Configuration file not found: {config_file}")
+            raise FileNotFoundError(f"Configuration file not found: {config_file}")
 
         if not config_file.is_file():
-            raise ValueError(
-                f"Configuration path is not a file: {config_file}")
+            raise ValueError(f"Configuration path is not a file: {config_file}")
 
         try:
-            with open(config_file, 'r', encoding='utf-8') as f:
+            with open(config_file, "r", encoding="utf-8") as f:
                 config_data = yaml.safe_load(f) or {}
         except yaml.YAMLError as e:
             raise ValueError(
-                f"Invalid YAML in configuration file {config_file}: {e}") from e
+                f"Invalid YAML in configuration file {config_file}: {e}"
+            ) from e
         except Exception as e:
             raise RuntimeError(
-                f"Error reading configuration file {config_file}: {e}") from e
+                f"Error reading configuration file {config_file}: {e}"
+            ) from e
 
         # Expand environment variables
         config_data = cls._expand_environment_variables(config_data)
@@ -246,7 +255,9 @@ class Config(BaseSettings):
         return config_data
 
     @classmethod
-    def find_config_file(cls, search_paths: Optional[List[str]] = None) -> Optional[Path]:
+    def find_config_file(
+        cls, search_paths: Optional[List[str]] = None
+    ) -> Optional[Path]:
         """Find the first existing configuration file in the search paths."""
         if search_paths is None:
             # Use default search paths
@@ -256,7 +267,7 @@ class Config(BaseSettings):
                 "~/.config/gke-logs/config.yaml",
                 "~/.config/gke-logs/config.yml",
                 "/etc/gke-logs/config.yaml",
-                "/etc/gke-logs/config.yml"
+                "/etc/gke-logs/config.yml",
             ]
 
         for path_str in search_paths:
@@ -267,12 +278,15 @@ class Config(BaseSettings):
         return None
 
     @classmethod
-    def load_from_file(cls, config_path: Optional[str] = None,
-                       search_paths: Optional[List[str]] = None) -> "Config":
+    def load_from_file(
+        cls,
+        config_path: Optional[str] = None,
+        search_paths: Optional[List[str]] = None,
+    ) -> "Config":
         """Load configuration from a YAML file.
 
         Args:
-            config_path: Explicit path to config file. If None, will search default locations.
+            config_path: Explicit path to config file. If None, will search.
             search_paths: Custom search paths if config_path is None.
 
         Returns:
@@ -289,7 +303,7 @@ class Config(BaseSettings):
             config_file = cls.find_config_file(search_paths)
             if not config_file:
                 # Return default config if no file found
-                return cls()
+                return cls()  # type: ignore[call-arg]
             config_data = cls._load_yaml_file(config_file)
 
         try:
@@ -298,8 +312,11 @@ class Config(BaseSettings):
             raise ValueError(f"Configuration validation failed: {e}") from e
 
     @classmethod
-    def load_with_overrides(cls, config_path: Optional[str] = None,
-                            overrides: Optional[Dict[str, Any]] = None) -> "Config":
+    def load_with_overrides(
+        cls,
+        config_path: Optional[str] = None,
+        overrides: Optional[Dict[str, Any]] = None,
+    ) -> "Config":
         """Load configuration with optional overrides.
 
         Args:
@@ -335,7 +352,7 @@ class Config(BaseSettings):
             "gemini": self.gemini.model_dump(),
             "ui": self.ui.model_dump(),
             "logging": self.logging.model_dump(),
-            "streaming": self.streaming.model_dump()
+            "streaming": self.streaming.model_dump(),
         }
 
         # Optionally include CLI arguments
@@ -346,7 +363,7 @@ class Config(BaseSettings):
                 "zone": self.zone,
                 "region": self.region,
                 "namespace": self.namespace,
-                "verbose": self.verbose
+                "verbose": self.verbose,
             }
             # Only include non-None values
             cli_data = {k: v for k, v in cli_data.items() if v is not None}
@@ -354,12 +371,14 @@ class Config(BaseSettings):
                 export_data["cli_defaults"] = cli_data
 
         try:
-            with open(config_file, 'w', encoding='utf-8') as f:
-                yaml.safe_dump(export_data, f, default_flow_style=False,
-                               sort_keys=False, indent=2)
+            with open(config_file, "w", encoding="utf-8") as f:
+                yaml.safe_dump(
+                    export_data, f, default_flow_style=False, sort_keys=False, indent=2
+                )
         except Exception as e:
             raise RuntimeError(
-                f"Error writing configuration file {config_file}: {e}") from e
+                f"Error writing configuration file {config_file}: {e}"
+            ) from e
 
     @classmethod
     def create_template(cls, config_path: str) -> None:
@@ -374,16 +393,21 @@ class Config(BaseSettings):
         # Create a custom YAML representation that includes comments
         yaml_lines = []
         yaml_lines.append("# GKE Log Processor Configuration")
-        yaml_lines.append("# This file supports environment variable expansion using $VAR or ${VAR} syntax")
+        yaml_lines.append(
+            "# This file supports environment variable expansion using "
+            "$VAR or ${VAR} syntax"
+        )
         yaml_lines.append("")
 
         # Add clusters section with comments
         yaml_lines.append("# Predefined GKE clusters")
         yaml_lines.append("clusters:")
         yaml_lines.append("  - name: my-cluster")
-        yaml_lines.append("    project_id: ${GCP_PROJECT_ID}  # Environment variable expansion")
+        yaml_lines.append("    project_id: ${GCP_PROJECT_ID}")
+        yaml_lines.append("    # Environment variable expansion example above")
         yaml_lines.append("    zone: us-central1-a")
-        yaml_lines.append("    # region: us-central1  # Use region instead of zone for regional clusters")
+        yaml_lines.append("    # region: us-central1  # Use region instead of zone")
+        yaml_lines.append("    # for regional clusters")
         yaml_lines.append("    namespace: default")
         yaml_lines.append("")
 
@@ -392,10 +416,10 @@ class Config(BaseSettings):
             "gemini": "# Gemini AI configuration",
             "ui": "# User interface configuration",
             "logging": "# Application logging configuration",
-            "streaming": "# Log streaming configuration"
+            "streaming": "# Log streaming configuration",
         }
 
-        config_obj = cls()
+        config_obj = cls()  # type: ignore[call-arg]
         for section_name, comment in sections.items():
             yaml_lines.append(comment)
             section_data = getattr(config_obj, section_name).model_dump()
@@ -404,17 +428,19 @@ class Config(BaseSettings):
             if section_name == "gemini" and "api_key" in section_data:
                 section_data["api_key"] = "${GEMINI_API_KEY}"
 
-            section_yaml = yaml.safe_dump({section_name: section_data},
-                                          default_flow_style=False, indent=2)
-            yaml_lines.extend(section_yaml.strip().split('\n'))
+            section_yaml = yaml.safe_dump(
+                {section_name: section_data}, default_flow_style=False, indent=2
+            )
+            yaml_lines.extend(section_yaml.strip().split("\n"))
             yaml_lines.append("")
 
         try:
-            with open(config_file, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(yaml_lines))
+            with open(config_file, "w", encoding="utf-8") as f:
+                f.write("\n".join(yaml_lines))
         except Exception as e:
             raise RuntimeError(
-                f"Error creating template file {config_file}: {e}") from e
+                f"Error creating template file {config_file}: {e}"
+            ) from e
 
     def validate_config(self) -> List[str]:
         """Validate the current configuration and return any warnings.
@@ -430,10 +456,14 @@ class Config(BaseSettings):
 
         # Check Gemini API key
         if not self.effective_gemini_api_key:
-            warnings.append("Gemini API key not configured - AI features will be disabled")
+            warnings.append(
+                "Gemini API key not configured - AI features will be disabled"
+            )
 
         # Check Google Cloud credentials
-        if not self.google_application_credentials and not os.environ.get('GOOGLE_APPLICATION_CREDENTIALS'):
+        if not self.google_application_credentials and not os.environ.get(
+            "GOOGLE_APPLICATION_CREDENTIALS"
+        ):
             warnings.append("Google Cloud credentials not configured")
 
         # Check log file path if specified
