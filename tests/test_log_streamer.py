@@ -3,15 +3,21 @@ Tests for log streaming functionality.
 """
 
 import asyncio
-import pytest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, Mock, patch
 
-from gke_log_processor.gke.log_streamer import (
-    LogEntry, LogLevel, LogStreamer, LogBuffer, RateLimiter, StreamConfig
-)
-from gke_log_processor.gke.kubernetes_client import PodInfo
+import pytest
+
 from gke_log_processor.core.exceptions import LogProcessingError
+from gke_log_processor.gke.kubernetes_client import PodInfo
+from gke_log_processor.gke.log_streamer import (
+    LogBuffer,
+    LogEntry,
+    LogLevel,
+    LogStreamer,
+    RateLimiter,
+    StreamConfig,
+)
 
 
 class TestLogEntry:
@@ -27,7 +33,7 @@ class TestLogEntry:
             container_name="app",
             message="Test message"
         )
-        
+
         assert entry.timestamp == timestamp
         assert entry.pod_name == "test-pod"
         assert entry.namespace == "default"
@@ -44,7 +50,7 @@ class TestLogEntry:
             container_name="app",
             message="ERROR: Something went wrong"
         )
-        
+
         assert entry.level == LogLevel.ERROR
         assert entry.is_error is True
 
@@ -57,7 +63,7 @@ class TestLogEntry:
             container_name="app",
             message="WARNING: This is a warning"
         )
-        
+
         assert entry.level == LogLevel.WARN
         assert entry.is_error is False
 
@@ -70,7 +76,7 @@ class TestLogEntry:
             container_name="app",
             message="Starting application"
         )
-        
+
         assert entry.level == LogLevel.INFO
         assert entry.severity_score == 2
 
@@ -84,7 +90,7 @@ class TestLogEntry:
             container_name="app",
             message="Test"
         )
-        
+
         formatted = entry.formatted_timestamp
         assert "2023-01-01 12:00:00.123" in formatted
 
@@ -98,7 +104,7 @@ class TestLogEntry:
             container_name="app",
             message="Test message"
         )
-        
+
         str_repr = str(entry)
         assert "test-pod/app" in str_repr
         assert "Test message" in str_repr
@@ -112,7 +118,7 @@ class TestLogBuffer:
     async def test_buffer_initialization(self):
         """Test LogBuffer initialization."""
         buffer = LogBuffer(max_size=100, flush_interval=2.0)
-        
+
         assert buffer.max_size == 100
         assert buffer.flush_interval == 2.0
         assert len(buffer._buffer) == 0
@@ -121,7 +127,7 @@ class TestLogBuffer:
     async def test_add_entry(self):
         """Test adding entries to buffer."""
         buffer = LogBuffer(max_size=10, flush_interval=10.0)
-        
+
         entry = LogEntry(
             timestamp=datetime.now(timezone.utc),
             pod_name="test-pod",
@@ -129,7 +135,7 @@ class TestLogBuffer:
             container_name="app",
             message="Test"
         )
-        
+
         await buffer.add(entry)
         current_entries = buffer.get_current_entries()
         assert len(current_entries) == 1
@@ -140,15 +146,15 @@ class TestLogBuffer:
         """Test buffer flushes when max size is reached."""
         callback_called = False
         received_entries = []
-        
+
         def test_callback(entries):
             nonlocal callback_called, received_entries
             callback_called = True
             received_entries = entries
-        
+
         buffer = LogBuffer(max_size=2, flush_interval=10.0)
         buffer.add_callback(test_callback)
-        
+
         # Add entries
         for i in range(3):
             entry = LogEntry(
@@ -159,7 +165,7 @@ class TestLogBuffer:
                 message=f"Test {i}"
             )
             await buffer.add(entry)
-        
+
         assert callback_called
         assert len(received_entries) >= 2
 
@@ -168,15 +174,15 @@ class TestLogBuffer:
         """Test manual buffer flushing."""
         callback_called = False
         received_entries = []
-        
+
         def test_callback(entries):
             nonlocal callback_called, received_entries
             callback_called = True
             received_entries = entries
-        
+
         buffer = LogBuffer(max_size=10, flush_interval=10.0)
         buffer.add_callback(test_callback)
-        
+
         entry = LogEntry(
             timestamp=datetime.now(timezone.utc),
             pod_name="test-pod",
@@ -185,10 +191,10 @@ class TestLogBuffer:
             message="Test"
         )
         await buffer.add(entry)
-        
+
         # Manual flush
         await buffer.force_flush()
-        
+
         assert callback_called
         assert len(received_entries) == 1
 
@@ -200,7 +206,7 @@ class TestRateLimiter:
     async def test_rate_limiter_initialization(self):
         """Test RateLimiter initialization."""
         limiter = RateLimiter(max_rate=10.0, window=1.0)
-        
+
         assert limiter.max_rate == 10.0
         assert limiter.window == 1.0
 
@@ -208,7 +214,7 @@ class TestRateLimiter:
     async def test_acquire_under_limit(self):
         """Test acquiring tokens under the rate limit."""
         limiter = RateLimiter(max_rate=5.0, window=1.0)
-        
+
         # Should be able to acquire up to max_rate tokens
         for i in range(5):
             can_acquire = await limiter.acquire()
@@ -218,12 +224,12 @@ class TestRateLimiter:
     async def test_acquire_over_limit(self):
         """Test acquiring tokens over the rate limit."""
         limiter = RateLimiter(max_rate=2.0, window=1.0)
-        
+
         # Acquire up to limit
         for i in range(2):
             can_acquire = await limiter.acquire()
             assert can_acquire is True
-        
+
         # Next acquisition should fail
         can_acquire = await limiter.acquire()
         assert can_acquire is False
@@ -263,7 +269,7 @@ class TestLogStreamer:
         """Test LogStreamer initialization."""
         config = StreamConfig(max_buffer_size=500)
         streamer = LogStreamer(mock_k8s_client, config)
-        
+
         assert streamer.k8s_client == mock_k8s_client
         assert streamer.config.max_buffer_size == 500
         assert len(streamer._active_streams) == 0
@@ -271,11 +277,11 @@ class TestLogStreamer:
     def test_parse_log_line_simple(self, log_streamer):
         """Test parsing a simple log line."""
         line = "2023-01-01T12:00:00Z INFO Starting application"
-        
+
         entry = log_streamer._parse_log_line(
             line, "test-pod", "default", "app"
         )
-        
+
         assert entry.pod_name == "test-pod"
         assert entry.namespace == "default"
         assert entry.container_name == "app"
@@ -285,11 +291,11 @@ class TestLogStreamer:
     def test_parse_log_line_with_error(self, log_streamer):
         """Test parsing a log line with error level."""
         line = "ERROR: Database connection failed"
-        
+
         entry = log_streamer._parse_log_line(
             line, "test-pod", "default", "app"
         )
-        
+
         assert entry.level == LogLevel.ERROR
         assert entry.is_error is True
         assert "Database connection failed" in entry.message
@@ -303,9 +309,9 @@ class TestLogStreamer:
             "2023-01-01T12:00:00Z Starting app\n"
             "2023-01-01T12:00:01Z App ready\n"
         )
-        
+
         logs = await log_streamer.get_recent_logs([mock_pod_info], lines=10)
-        
+
         assert len(logs) == 2
         assert logs[0].message == "Starting app"
         assert logs[1].message == "App ready"
@@ -326,13 +332,13 @@ class TestLogStreamer:
                 await asyncio.sleep(10)  # Long running task
             except asyncio.CancelledError:
                 pass  # Expected when cancelled
-        
+
         # Start a real task
         task = asyncio.create_task(dummy_stream())
         log_streamer._active_streams["test_stream"] = task
-        
+
         await log_streamer.stop_all_streams()
-        
+
         assert log_streamer._shutdown_event.is_set()
         assert len(log_streamer._active_streams) == 0
         assert task.cancelled() or task.done()
@@ -342,7 +348,7 @@ class TestLogStreamer:
         # Add mock streams
         log_streamer._active_streams["stream1"] = Mock()
         log_streamer._active_streams["stream2"] = Mock()
-        
+
         active = log_streamer.get_active_streams()
         assert len(active) == 2
         assert "stream1" in active
@@ -355,7 +361,7 @@ class TestStreamConfig:
     def test_stream_config_defaults(self):
         """Test default StreamConfig values."""
         config = StreamConfig()
-        
+
         assert config.max_buffer_size == 1000
         assert config.buffer_flush_interval == 1.0
         assert config.max_logs_per_second == 100.0
@@ -371,7 +377,7 @@ class TestStreamConfig:
             min_log_level=LogLevel.WARN,
             follow_logs=False
         )
-        
+
         assert config.max_buffer_size == 500
         assert config.max_logs_per_second == 50.0
         assert config.min_log_level == LogLevel.WARN

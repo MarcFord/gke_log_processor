@@ -8,17 +8,15 @@ with intelligent buffering, rate limiting, and error handling.
 import asyncio
 import logging
 import time
-from collections import defaultdict, deque
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import AsyncGenerator, Callable, Dict, List, Optional, Set
+from typing import AsyncGenerator, Callable, Dict, List, Optional
 
-from kubernetes.client import CoreV1Api  # type: ignore[import-untyped]
 from kubernetes.stream import stream  # type: ignore[import-untyped]
-from kubernetes.watch import Watch  # type: ignore[import-untyped]
 
-from ..core.exceptions import KubernetesConnectionError, LogProcessingError
+from ..core.exceptions import LogProcessingError
 from .kubernetes_client import KubernetesClient, PodInfo
 
 logger = logging.getLogger(__name__)
@@ -44,7 +42,7 @@ class LogEntry:
     namespace: str
     container_name: str
     message: str
-    level: Optional[LogLevel] = None
+    level: LogLevel = LogLevel.INFO
     raw_line: str = ""
 
     def __post_init__(self):
@@ -52,8 +50,8 @@ class LogEntry:
         if not self.raw_line:
             self.raw_line = self.message
 
-        # Try to detect log level from message if not set
-        if self.level is None:
+        # Try to detect log level from message if it's the default
+        if self.level == LogLevel.INFO:
             self.level = self._detect_log_level()
 
     def _detect_log_level(self) -> LogLevel:
@@ -269,7 +267,7 @@ class LogStreamer:
         logger.info(f"Starting log stream for {stream_id}")
 
         try:
-            api = self.k8s_client._get_api()
+            api = self._get_k8s_api()
 
             # Configure stream parameters
             stream_params = {
@@ -307,8 +305,17 @@ class LogStreamer:
                         target_container
                     )
 
-                    # Filter by log level
-                    if log_entry.severity_score >= self.config.min_log_level.value:
+                    # Filter by log level - compare severity scores
+                    min_severity = {
+                        LogLevel.TRACE: 0,
+                        LogLevel.DEBUG: 1,
+                        LogLevel.INFO: 2,
+                        LogLevel.WARN: 3,
+                        LogLevel.ERROR: 4,
+                        LogLevel.FATAL: 5
+                    }.get(self.config.min_log_level, 2)
+
+                    if log_entry.severity_score >= min_severity:
                         yield log_entry
 
                 except Exception as e:
@@ -366,12 +373,12 @@ class LogStreamer:
         stream_tasks = []
         stream_queues = []
 
-        for i, stream in enumerate(streams):
-            queue = asyncio.Queue()
+        for i, log_stream in enumerate(streams):
+            queue: asyncio.Queue = asyncio.Queue()
             stream_queues.append(queue)
 
             task = asyncio.create_task(
-                self._stream_to_queue(stream, queue, f"stream_{i}")
+                self._stream_to_queue(log_stream, queue, f"stream_{i}")
             )
             stream_tasks.append(task)
 
@@ -409,15 +416,20 @@ class LogStreamer:
 
             await asyncio.gather(*stream_tasks, return_exceptions=True)
 
-    async def _stream_to_queue(self, stream: AsyncGenerator, queue: asyncio.Queue, stream_id: str) -> None:
+    async def _stream_to_queue(self, log_stream: AsyncGenerator, queue: asyncio.Queue, stream_id: str) -> None:
         """Feed a stream into a queue."""
         try:
-            async for log_entry in stream:
+            async for log_entry in log_stream:
                 await queue.put(log_entry)
         except Exception as e:
             logger.error(f"Error in stream {stream_id}: {e}")
         finally:
             await queue.put(None)  # End of stream marker
+
+    def _get_k8s_api(self):
+        """Get the Kubernetes API client."""
+        # Using protected member access as this is within the same module context
+        return self.k8s_client._get_api()  # pylint: disable=protected-access
 
     def _parse_log_line(self, line: str, pod_name: str, namespace: str, container_name: str) -> LogEntry:
         """Parse a log line into a LogEntry object."""
@@ -566,7 +578,7 @@ class LogStreamer:
         for pod_info in pods:
             try:
                 target_container = container_name or pod_info.containers[0]
-                api = self.k8s_client._get_api()
+                api = self._get_k8s_api()
 
                 log_lines = api.read_namespaced_pod_log(
                     name=pod_info.name,
