@@ -8,6 +8,8 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
+from rich.text import Text
+
 from ..core.exceptions import LogProcessingError
 from ..core.logging import get_logger
 from ..core.models import (
@@ -20,6 +22,7 @@ from ..core.models import (
 )
 from ..core.utils import utc_now
 from .client import GeminiClient, GeminiConfig
+from .highlighter import HighlighterConfig, HighlightTheme, SeverityHighlighter
 
 logger = get_logger(__name__)
 
@@ -612,11 +615,14 @@ class BatchProcessor:
 class LogAnalysisEngine:
     """Main log analysis engine combining all analysis capabilities."""
 
-    def __init__(self, gemini_config: Optional[GeminiConfig] = None):
+    def __init__(self,
+                 gemini_config: Optional[GeminiConfig] = None,
+                 highlighter_config: Optional[HighlighterConfig] = None):
         self.severity_detector = SeverityDetectionAlgorithm()
         self.pattern_engine = PatternRecognitionEngine()
         self.batch_processor = BatchProcessor()
         self.gemini_client = GeminiClient(gemini_config) if gemini_config else None
+        self.highlighter = SeverityHighlighter(highlighter_config)
         self.logger = get_logger(__name__)
 
     async def analyze_logs_comprehensive(
@@ -881,3 +887,125 @@ class LogAnalysisEngine:
                 existing.confidence = max(existing.confidence, pattern.confidence)
 
         return unique_patterns
+
+    async def analyze_with_highlighting(
+        self,
+        log_entries: List[LogEntry],
+        theme: Optional[HighlightTheme] = None
+    ) -> Tuple[AIAnalysisResult, List[Text]]:
+        """Perform comprehensive analysis and return highlighted log entries.
+
+        Args:
+            log_entries: List of log entries to analyze
+            theme: Optional highlighting theme to use
+
+        Returns:
+            Tuple of (analysis result, highlighted log entries)
+        """
+        # Update highlighter theme if specified
+        if theme and theme != self.highlighter.config.theme:
+            new_config = HighlighterConfig(theme=theme)
+            self.highlighter.update_config(new_config)
+
+        # Perform analysis
+        analysis_result = await self.analyze_logs_comprehensive(log_entries)
+
+        # Generate highlighted logs
+        highlighted_logs = self.highlighter.highlight_multiple_entries(log_entries)
+
+        return analysis_result, highlighted_logs
+
+    def get_highlighted_logs(
+        self,
+        log_entries: List[LogEntry],
+        theme: Optional[HighlightTheme] = None
+    ) -> List[Text]:
+        """Get highlighted version of log entries.
+
+        Args:
+            log_entries: List of log entries to highlight
+            theme: Optional highlighting theme to use
+
+        Returns:
+            List of Rich Text objects with applied highlighting
+        """
+        # Update highlighter theme if specified
+        if theme and theme != self.highlighter.config.theme:
+            new_config = HighlighterConfig(theme=theme)
+            self.highlighter.update_config(new_config)
+
+        return self.highlighter.highlight_multiple_entries(log_entries)
+
+    def get_severity_stats_with_colors(
+        self,
+        log_entries: List[LogEntry]
+    ) -> Dict[str, Union[int, Text]]:
+        """Get severity statistics with color-coded severity labels.
+
+        Args:
+            log_entries: List of log entries to analyze
+
+        Returns:
+            Dictionary with severity counts and colored labels
+        """
+        stats = self.highlighter.get_severity_stats(log_entries)
+        colored_stats = {}
+
+        for severity, count in stats.items():
+            # Get the style for this severity level
+            style = self.highlighter._get_style_for_severity(severity)
+            rich_style = self.highlighter._convert_to_rich_style(style)
+
+            # Create colored text for the severity label
+            colored_label = Text(severity.value.title(), style=rich_style)
+
+            colored_stats[f"{severity.value}_count"] = count
+            colored_stats[f"{severity.value}_label"] = colored_label
+
+        return colored_stats
+
+    def highlight_single_log(
+        self,
+        log_entry: LogEntry,
+        theme: Optional[HighlightTheme] = None
+    ) -> Text:
+        """Highlight a single log entry.
+
+        Args:
+            log_entry: Log entry to highlight
+            theme: Optional highlighting theme to use
+
+        Returns:
+            Rich Text object with applied highlighting
+        """
+        # Update highlighter theme if specified
+        if theme and theme != self.highlighter.config.theme:
+            new_config = HighlighterConfig(theme=theme)
+            self.highlighter.update_config(new_config)
+
+        return self.highlighter.highlight_log_entry(log_entry)
+
+    def update_highlighting_config(self, config: HighlighterConfig):
+        """Update the highlighting configuration.
+
+        Args:
+            config: New highlighter configuration
+        """
+        self.highlighter.update_config(config)
+
+    def get_available_themes(self) -> List[HighlightTheme]:
+        """Get list of available highlighting themes.
+
+        Returns:
+            List of available highlight themes
+        """
+        return list(HighlightTheme)
+
+    def set_highlighting_theme(self, theme: HighlightTheme):
+        """Set the highlighting theme.
+
+        Args:
+            theme: Theme to set
+        """
+        new_config = HighlighterConfig(theme=theme)
+        self.highlighter.update_config(new_config)
