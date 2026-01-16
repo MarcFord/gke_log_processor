@@ -72,12 +72,20 @@ class TestLogViewer:
     @pytest.fixture
     def log_viewer(self):
         """Create a LogViewer instance for testing."""
-        return LogViewer()
+        with patch('gke_log_processor.ui.components.log_viewer.SeverityHighlighter') as mock_highlighter, \
+                patch('rich.console.Console') as mock_console:
+            mock_highlighter.return_value = Mock()
+            mock_console.return_value = Mock()
+            return LogViewer()
 
     @pytest.fixture
     def app_with_log_viewer(self, log_viewer):
         """Create test app with log viewer."""
-        return LogViewerTestApp(log_viewer)
+        with patch('gke_log_processor.ui.components.log_viewer.SeverityHighlighter') as mock_highlighter, \
+                patch('rich.console.Console') as mock_console:
+            mock_highlighter.return_value = Mock()
+            mock_console.return_value = Mock()
+            return LogViewerTestApp(log_viewer)
 
     def test_initialization(self, log_viewer):
         """Test widget initialization."""

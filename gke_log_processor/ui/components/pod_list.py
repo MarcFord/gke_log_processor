@@ -254,7 +254,7 @@ class PodListWidget(Widget):
             restart_count = sum(container.restart_count for container in pod.containers
                                 if pod.containers) if pod.containers else 0
 
-            age = self._format_age(pod.creation_timestamp) if pod.creation_timestamp else "Unknown"
+            age = self._format_age(pod.created_at) if pod.created_at else "Unknown"
 
             table.add_row(
                 status_icon,

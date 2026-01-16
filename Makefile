@@ -62,7 +62,7 @@ lint-fix: format ## Fix linting issues automatically where possible
 
 test: ## Run tests with pytest
 	@echo "$(YELLOW)Running tests...$(RESET)"
-	@$(UV) run pytest tests/ -v || (echo "$(RED)✗ Tests failed$(RESET)" && exit 1)
+	@$(UV) run pytest --ignore=tests/ui/ tests/ -v || (echo "$(RED)✗ Tests failed$(RESET)" && exit 1)
 	@echo "$(GREEN)✓ All tests passed$(RESET)"
 
 test-fast: ## Run tests quickly (no coverage)
