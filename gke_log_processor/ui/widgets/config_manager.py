@@ -32,7 +32,7 @@ class ConfigManagerWidget(Widget):
         dock: top;
         height: 3;
         background: $surface;
-        column-gap: 1;
+        column-span: 1;
         padding: 0 1;
     }
 
@@ -80,19 +80,28 @@ class ConfigManagerWidget(Widget):
         kubernetes = self._config.kubernetes
         ai = self._config.ai
 
-        location = gke.zone or gke.region or "(not set)"
+        location = gke.location or "(not set)"
         api_key_state = "set" if ai.gemini_api_key else "missing"
+        active_cluster = self._config.active_cluster or gke.cluster_name or "(not set)"
+        cluster_count = len(self._config.clusters)
+        active_profile = self._config.active_profile or "(none)"
+        profile_count = len(self._config.profiles)
 
         return (
             "**GKE**\n"
+            f"• Active cluster: {active_cluster}\n"
             f"• Project: {gke.project_id or '(not set)'}\n"
-            f"• Cluster: {gke.cluster_name or '(not set)'}\n"
-            f"• Location: {location}\n\n"
+            f"• Location: {location}\n"
+            f"• Saved clusters: {cluster_count}\n\n"
+            "**Profiles**\n"
+            f"• Active profile: {active_profile}\n"
+            f"• Saved profiles: {profile_count}\n\n"
             "**Kubernetes**\n"
             f"• Namespace: {kubernetes.default_namespace}\n"
             f"• Request timeout: {kubernetes.request_timeout_seconds}s\n\n"
             "**AI**\n"
             f"• Model: {ai.model_name}\n"
+            f"• Analysis: {'enabled' if ai.analysis_enabled else 'disabled'}\n"
             f"• API key: {api_key_state}\n"
             f"• Max tokens: {ai.max_tokens}"
         )

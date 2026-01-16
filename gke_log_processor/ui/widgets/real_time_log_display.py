@@ -35,7 +35,7 @@ class RealTimeLogDisplay(Widget):
         dock: top;
         height: 3;
         background: $surface;
-        column-gap: 2;
+        column-span: 2;
         padding: 0 1;
     }
 

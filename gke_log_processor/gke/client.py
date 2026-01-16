@@ -108,15 +108,15 @@ class GKEClient:
 
             # If project from credentials doesn't match config, use config
             # project
-            if project and project != self.config.project_id:
+            if project and project != self.config.gke.project_id:
                 logger.warning(
                     f"Credentials project ({project}) differs from config project "
-                    f"({self.config.project_id}). Using config project."
+                    f"({self.config.gke.project_id}). Using config project."
                 )
 
             logger.info(
                 f"Successfully authenticated with Google Cloud for project: {
-                    self.config.project_id}")
+                    self.config.gke.project_id}")
             return credentials
 
         except Exception as e:
@@ -135,7 +135,7 @@ class GKEClient:
         try:
             logger.info(
                 f"Creating Kubernetes client for cluster: {
-                    self.config.cluster_name}")
+                    self.config.gke.cluster_name}")
 
             # Get cluster info first
             cluster_info = self.cluster_info
@@ -182,7 +182,7 @@ class GKEClient:
         try:
             logger.info(
                 f"Fetching cluster info for: {
-                    self.config.cluster_name}")
+                    self.config.gke.cluster_name}")
 
             current_cluster = self.config.current_cluster
             if not current_cluster:
@@ -281,25 +281,21 @@ class GKEClient:
                         f"Kubernetes API error: {e}") from e
 
             # Check if target namespace exists
+            target_namespace = self.config.kubernetes.default_namespace
             try:
-                v1.read_namespace(name=self.config.namespace)
-                logger.info(
-                    f"Target namespace '{
-                        self.config.namespace}' is accessible")
+                v1.read_namespace(name=target_namespace)
+                logger.info("Target namespace '%s' is accessible", target_namespace)
             except ApiException as e:
                 if e.status == 404:
-                    logger.warning(
-                        f"Namespace '{
-                            self.config.namespace}' does not exist")
+                    logger.warning("Namespace '%s' does not exist", target_namespace)
                     return False
-                elif e.status == 403:
+                if e.status == 403:
                     raise GKEConnectionError(
-                        f"Permission denied accessing namespace '{
-                            self.config.namespace}'"
+                        f"Permission denied accessing namespace '{target_namespace}'"
                     )
-                else:
-                    raise GKEConnectionError(
-                        f"Error accessing namespace: {e}") from e
+                raise GKEConnectionError(
+                    f"Error accessing namespace: {e}"
+                ) from e
 
             logger.info("GKE cluster connection validation successful")
             return True

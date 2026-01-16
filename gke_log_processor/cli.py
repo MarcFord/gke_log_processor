@@ -34,24 +34,26 @@ def main(
 
         # Override with CLI arguments
         if cluster:
-            config.cluster_name = cluster
+            config.gke.cluster_name = cluster
         if project:
-            config.project_id = project
+            config.gke.project_id = project
         if zone:
-            config.zone = zone
+            config.gke.zone = zone
+            config.gke.region = None
         if region:
-            config.region = region
+            config.gke.region = region
+            config.gke.zone = None
         if namespace != "default":
-            config.namespace = namespace
+            config.kubernetes.default_namespace = namespace
         if gemini_api_key:
-            config.gemini.api_key = gemini_api_key
+            config.ai.gemini_api_key = gemini_api_key
         config.verbose = verbose
 
         # Validate that we have required information
-        if not config.cluster_name:
+        if not config.gke.cluster_name:
             raise click.ClickException(
                 "Cluster name is required (use --cluster or config file)")
-        if not config.project_id:
+        if not config.gke.project_id:
             raise click.ClickException(
                 "Project ID is required (use --project or config file)")
         if not config.current_cluster:

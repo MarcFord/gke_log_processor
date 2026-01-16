@@ -1,7 +1,7 @@
 """Connection dialog for GKE cluster setup."""
 
 import asyncio
-from typing import Optional
+from typing import List, Optional
 
 from textual.app import ComposeResult
 from textual.containers import Grid, Horizontal, Vertical
@@ -74,6 +74,7 @@ class ConnectionDialog(ModalScreen):
     region: reactive[str] = reactive("")
     namespace: reactive[str] = reactive("default")
     connection_type: reactive[str] = reactive("zone")
+    selected_cluster: reactive[str] = reactive("__manual__")
 
     class ConnectionRequested(Message):
         """Message sent when connection is requested."""
@@ -106,6 +107,55 @@ class ConnectionDialog(ModalScreen):
             else:
                 self.connection_type = "zone"
 
+        if self.config.active_cluster and self.config.get_cluster(self.config.active_cluster):
+            self.selected_cluster = self.config.active_cluster
+            cluster = self.config.get_cluster(self.selected_cluster)
+            if cluster:
+                self._apply_cluster_to_state(cluster)
+        else:
+            self.selected_cluster = "__manual__"
+
+    def _cluster_options(self) -> List[tuple[str, str]]:
+        """Build the list of saved cluster options for the selector."""
+        options: List[tuple[str, str]] = [("➕ Manual entry", "__manual__")]
+        for cluster in self.config.clusters:
+            options.append((cluster.name, cluster.name))
+        return options
+
+    def _apply_cluster_to_state(self, cluster: "ClusterConfig") -> None:
+        """Copy cluster attributes into the reactive state."""
+        self.cluster_name = cluster.name
+        self.project_id = cluster.project_id
+        self.namespace = cluster.namespace or "default"
+        if cluster.region:
+            self.connection_type = "region"
+            self.region = cluster.region
+            self.zone = ""
+        else:
+            self.connection_type = "zone"
+            self.zone = cluster.zone or ""
+            self.region = ""
+
+    def _refresh_form_inputs(self) -> None:
+        """Synchronize widget values with the current reactive state."""
+        try:
+            self.query_one("#cluster-input", Input).value = self.cluster_name
+            self.query_one("#project-input", Input).value = self.project_id
+            location_input = self.query_one("#location-input", Input)
+            if self.connection_type == "zone":
+                location_input.value = self.zone
+            else:
+                location_input.value = self.region
+            namespace_input = self.query_one("#namespace-input", Input)
+            namespace_input.value = self.namespace
+            type_select = self.query_one("#type-select", Select)
+            type_select.value = self.connection_type
+            cluster_select = self.query_one("#saved-cluster-select", Select)
+            cluster_select.value = self.selected_cluster
+        except Exception:
+            # Widgets may not yet exist during initialization; ignore
+            pass
+
     def compose(self) -> ComposeResult:
         """Compose the dialog."""
         with Vertical(classes="dialog-container"):
@@ -115,6 +165,15 @@ class ConnectionDialog(ModalScreen):
             yield Static("", id="error-message", classes="error-message")
 
             with Grid(classes="form-grid"):
+                yield Label("Saved Cluster:", id="saved-cluster-label")
+                options = self._cluster_options()
+                default_value = (
+                    self.selected_cluster
+                    if any(value == self.selected_cluster for _, value in options)
+                    else "__manual__"
+                )
+                yield Select(options=options, value=default_value, id="saved-cluster-select")
+
                 # Cluster Name
                 yield Label("Cluster Name:", id="cluster-label")
                 yield Input(
@@ -175,9 +234,17 @@ class ConnectionDialog(ModalScreen):
 
         # Focus the first input
         self.query_one("#cluster-input", Input).focus()
+        self._refresh_form_inputs()
 
     async def on_input_changed(self, event: Input.Changed) -> None:
         """Handle input changes."""
+        if event.input.id in {"cluster-input", "project-input", "location-input", "namespace-input"}:
+            if self.selected_cluster != "__manual__":
+                self.selected_cluster = "__manual__"
+                try:
+                    self.query_one("#saved-cluster-select", Select).value = self.selected_cluster
+                except Exception:
+                    pass
         if event.input.id == "cluster-input":
             self.cluster_name = event.value
         elif event.input.id == "project-input":
@@ -201,8 +268,20 @@ class ConnectionDialog(ModalScreen):
             location_input = self.query_one("#location-input", Input)
             if self.connection_type == "zone":
                 location_input.placeholder = "us-central1-a"
+                location_input.value = self.zone
             else:
                 location_input.placeholder = "us-central1"
+                location_input.value = self.region
+        elif event.select.id == "saved-cluster-select":
+            self.selected_cluster = str(event.value)
+            if self.selected_cluster == "__manual__":
+                self._refresh_form_inputs()
+                return
+
+            cluster = self.config.get_cluster(self.selected_cluster)
+            if cluster:
+                self._apply_cluster_to_state(cluster)
+            self._refresh_form_inputs()
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses."""
