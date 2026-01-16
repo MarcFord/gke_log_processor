@@ -4,12 +4,11 @@ Tests for log streaming functionality.
 
 import asyncio
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock
 
 import pytest
 
-from gke_log_processor.core.exceptions import LogProcessingError
-from gke_log_processor.gke.kubernetes_client import PodInfo
+from gke_log_processor.gke import log_streamer as log_streamer_module
 from gke_log_processor.gke.log_streamer import (
     LogBuffer,
     LogEntry,
@@ -261,7 +260,9 @@ class TestLogStreamer:
         config = StreamConfig(
             max_buffer_size=100,
             max_logs_per_second=50.0,
-            min_log_level=LogLevel.INFO
+            min_log_level=LogLevel.INFO,
+            max_retries=3,
+            retry_delay=0.01,
         )
         return LogStreamer(mock_k8s_client, config)
 
@@ -353,6 +354,84 @@ class TestLogStreamer:
         assert len(active) == 2
         assert "stream1" in active
         assert "stream2" in active
+
+    @pytest.mark.asyncio
+    async def test_stream_pod_logs_retries_on_initial_failure(
+        self,
+        log_streamer,
+        mock_pod_info,
+        monkeypatch,
+    ):
+        """Log streaming should retry on initial connection failure."""
+
+        attempts = {"count": 0}
+
+        def fake_stream(_read_fn, **_kwargs):
+            attempts["count"] += 1
+            if attempts["count"] == 1:
+                raise RuntimeError("connection reset by peer")
+            return iter(
+                [
+                    "2025-01-01T00:00:00Z First line",
+                    "2025-01-01T00:00:01Z Second line",
+                ]
+            )
+
+        monkeypatch.setattr(log_streamer_module, "stream", fake_stream)
+        log_streamer.config.follow_logs = False
+
+        entries = []
+        async for entry in log_streamer.stream_pod_logs(mock_pod_info, "app"):
+            entries.append(entry)
+
+        assert len(entries) == 2
+        assert attempts["count"] == 2
+
+    @pytest.mark.asyncio
+    async def test_stream_pod_logs_uses_since_time_on_retry(
+        self,
+        log_streamer,
+        mock_pod_info,
+        monkeypatch,
+    ):
+        """Log streaming should resume from last timestamp after a disconnect."""
+
+        class FailingStream:
+            def __init__(self):
+                self._lines = ["2025-01-01T00:00:00Z First"]
+                self._index = 0
+
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                if self._index < len(self._lines):
+                    value = self._lines[self._index]
+                    self._index += 1
+                    return value
+                raise RuntimeError("stream disconnected")
+
+            def close(self):
+                pass
+
+        call_kwargs = []
+
+        def fake_stream(_read_fn, **kwargs):
+            call_kwargs.append(kwargs)
+            if len(call_kwargs) == 1:
+                return FailingStream()
+            return iter(["2025-01-01T00:00:01Z Second"])
+
+        monkeypatch.setattr(log_streamer_module, "stream", fake_stream)
+        log_streamer.config.follow_logs = False
+
+        entries = []
+        async for entry in log_streamer.stream_pod_logs(mock_pod_info, "app"):
+            entries.append(entry)
+
+        assert len(entries) == 2
+        assert "since_time" in call_kwargs[1]
+        assert call_kwargs[1]["since_time"].startswith("2025-01-01T00:00:00")
 
 
 class TestStreamConfig:

@@ -270,67 +270,114 @@ class LogStreamer:
         stream_id = f"{pod_info.namespace}/{pod_info.name}/{target_container}"
 
         logger.info(f"Starting log stream for {stream_id}")
+        api = self._get_k8s_api()
 
-        try:
-            api = self._get_k8s_api()
+        min_severity = {
+            LogLevel.TRACE: 0,
+            LogLevel.DEBUG: 1,
+            LogLevel.INFO: 2,
+            LogLevel.WARN: 3,
+            LogLevel.ERROR: 4,
+            LogLevel.FATAL: 5,
+        }.get(self.config.min_log_level, 2)
 
-            # Configure stream parameters
-            stream_params = {
-                "name": pod_info.name,
-                "namespace": pod_info.namespace,
-                "container": target_container,
-                "follow": self.config.follow_logs,
-                "timestamps": self.config.timestamps,
-                "_preload_content": False,
-            }
+        attempt = 0
+        backoff_base = max(self.config.retry_delay, 0.0)
+        last_error: Optional[Exception] = None
+        last_timestamp: Optional[datetime] = None
 
-            if self.config.tail_lines:
-                stream_params["tail_lines"] = self.config.tail_lines
+        while not self._shutdown_event.is_set():
+            log_stream = None
+            try:
+                stream_params = {
+                    "name": pod_info.name,
+                    "namespace": pod_info.namespace,
+                    "container": target_container,
+                    "follow": self.config.follow_logs,
+                    "timestamps": self.config.timestamps,
+                    "_preload_content": False,
+                }
 
-            # Start streaming
-            log_stream = stream(api.read_namespaced_pod_log, **stream_params)
+                if self.config.tail_lines:
+                    stream_params["tail_lines"] = self.config.tail_lines
 
-            # Process log lines
-            for line in log_stream:
-                if self._shutdown_event.is_set():
-                    break
+                if last_timestamp and self.config.timestamps:
+                    stream_params["since_time"] = self._format_since_time(last_timestamp)
 
-                # Rate limiting
-                await self._rate_limiter.wait_if_needed()
+                log_stream = stream(api.read_namespaced_pod_log, **stream_params)
 
-                # Parse log line
-                try:
-                    log_entry = self._parse_log_line(
-                        line.strip(),
-                        pod_info.name,
-                        pod_info.namespace,
-                        target_container,
+                for raw_line in log_stream:
+                    if self._shutdown_event.is_set():
+                        logger.info(
+                            "Shutdown signal received; stopping log stream for %s",
+                            stream_id,
+                        )
+                        return
+
+                    await self._rate_limiter.wait_if_needed()
+
+                    line = raw_line.decode("utf-8", errors="replace") if isinstance(raw_line, bytes) else str(raw_line)
+
+                    try:
+                        log_entry = self._parse_log_line(
+                            line.strip(),
+                            pod_info.name,
+                            pod_info.namespace,
+                            target_container,
+                        )
+                        last_timestamp = log_entry.timestamp
+
+                        if log_entry.severity_score >= min_severity:
+                            attempt = 0  # Reset retry counter after successful entry
+                            yield log_entry
+
+                    except Exception as parse_error:
+                        logger.warning(f"Failed to parse log line: {parse_error}")
+                        continue
+
+                logger.info(f"Log stream ended for {stream_id}")
+                return
+
+            except Exception as exc:
+                last_error = exc
+                if attempt >= self.config.max_retries:
+                    logger.error(
+                        "Error streaming logs from %s after %s retries: %s",
+                        stream_id,
+                        self.config.max_retries,
+                        exc,
                     )
+                    raise LogProcessingError(
+                        f"Failed to stream logs from {stream_id}: {exc}"
+                    ) from exc
 
-                    # Filter by log level - compare severity scores
-                    min_severity = {
-                        LogLevel.TRACE: 0,
-                        LogLevel.DEBUG: 1,
-                        LogLevel.INFO: 2,
-                        LogLevel.WARN: 3,
-                        LogLevel.ERROR: 4,
-                        LogLevel.FATAL: 5,
-                    }.get(self.config.min_log_level, 2)
+                attempt += 1
+                backoff_seconds = backoff_base * max(1, 2 ** (attempt - 1))
+                logger.warning(
+                    "Log stream error for %s (attempt %s/%s): %s. Retrying in %.2f seconds",
+                    stream_id,
+                    attempt,
+                    self.config.max_retries,
+                    exc,
+                    backoff_seconds,
+                )
 
-                    if log_entry.severity_score >= min_severity:
-                        yield log_entry
+                if backoff_seconds > 0:
+                    await asyncio.sleep(backoff_seconds)
 
-                except Exception as e:
-                    logger.warning(f"Failed to parse log line: {e}")
-                    continue
+            finally:
+                if log_stream and hasattr(log_stream, "close"):
+                    try:
+                        log_stream.close()
+                    except Exception as close_error:
+                        logger.debug("Failed to close log stream: %s", close_error)
 
-            logger.info(f"Log stream ended for {stream_id}")
-
-        except Exception as e:
-            logger.error(f"Error streaming logs from {stream_id}: {e}")
+        if last_error:
             raise LogProcessingError(
-                f"Failed to stream logs from {stream_id}: {e}"
-            ) from e
+                f"Log streaming stopped for {stream_id}: {last_error}"
+            ) from last_error
+
+        logger.info(f"Log stream cancelled for {stream_id}")
 
     async def stream_multiple_pods(
         self, pods: List[PodInfo], container_name: Optional[str] = None
@@ -442,6 +489,11 @@ class LogStreamer:
         """Get the Kubernetes API client."""
         # Using protected member access as this is within the same module context
         return self.k8s_client._get_api()  # pylint: disable=protected-access
+
+    def _format_since_time(self, timestamp: datetime) -> str:
+        """Format timestamp for Kubernetes log streaming since_time parameter."""
+        utc_time = timestamp.astimezone(timezone.utc)
+        return utc_time.isoformat().replace("+00:00", "Z")
 
     def _parse_log_line(
         self, line: str, pod_name: str, namespace: str, container_name: str
