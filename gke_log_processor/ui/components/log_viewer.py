@@ -112,8 +112,13 @@ class LogViewer(Widget):
         # Initialize components
         self._log_buffer: deque[LogEntry] = deque(maxlen=self.max_lines)
         self._filtered_entries: List[LogEntry] = []
-        self._highlighter = SeverityHighlighter(theme=theme or HighlightTheme.DEFAULT)
-        self._console = Console()
+
+        # Initialize syntax highlighting with proper config
+        from ...ai.highlighter import HighlighterConfig
+        highlighter_config = HighlighterConfig(theme=theme or HighlightTheme.DEFAULT)
+        self._highlighter = SeverityHighlighter(highlighter_config)
+
+        self._rich_console = Console()
         self._search_matches: Set[int] = set()
         self._current_search: str = ""
 
