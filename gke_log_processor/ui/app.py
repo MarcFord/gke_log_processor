@@ -6,7 +6,7 @@ from typing import Optional
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, Vertical, VerticalScroll
+from textual.containers import Container, Horizontal, Vertical
 from textual.message import Message
 from textual.reactive import reactive
 from textual.widgets import Footer, Header, Static
@@ -20,6 +20,12 @@ from .components.pod_list import PodListWidget
 from .components.status_bar import StatusBarWidget
 from .dialogs.config_dialog import ConfigDialog
 from .dialogs.connection_dialog import ConnectionDialog
+from .widgets import (
+    AIResultsViewer,
+    ConfigManagerWidget,
+    PodSelector,
+    RealTimeLogDisplay,
+)
 
 
 class GKELogProcessorApp(App):
@@ -142,6 +148,10 @@ class GKELogProcessorApp(App):
         self.logger = get_logger(__name__)
 
         # Component references
+        self.pod_selector: Optional[PodSelector] = None
+        self.log_display: Optional[RealTimeLogDisplay] = None
+        self.ai_viewer: Optional[AIResultsViewer] = None
+        self.config_widget: Optional[ConfigManagerWidget] = None
         self.pod_list: Optional[PodListWidget] = None
         self.log_viewer: Optional[LogViewer] = None
         self.ai_panel: Optional[AIInsightsPanel] = None
@@ -162,21 +172,24 @@ class GKELogProcessorApp(App):
             with Horizontal(classes="main-layout"):
                 # Left Panel - Pod List
                 with Vertical(classes="left-panel", id="pod-panel"):
-                    yield Static("📋 Kubernetes Pods", classes="panel-header")
-                    self.pod_list = PodListWidget(id="pod-list")
-                    yield self.pod_list
+                    self.pod_selector = PodSelector(id="pod-selector")
+                    yield self.pod_selector
+                    self.pod_list = self.pod_selector.pod_list
 
                 # Center Panel - Log Viewer
                 with Vertical(classes="center-panel"):
-                    yield Static("📜 Pod Logs", classes="panel-header")
-                    self.log_viewer = LogViewer(id="log-viewer")
-                    yield self.log_viewer
+                    self.log_display = RealTimeLogDisplay(id="log-display")
+                    yield self.log_display
+                    self.log_viewer = self.log_display.log_viewer
 
                 # Right Panel - AI Insights
                 with Vertical(classes="right-panel", id="ai-panel"):
-                    yield Static("🤖 AI Insights", classes="panel-header")
-                    self.ai_panel = AIInsightsPanel(id="ai-insights")
-                    yield self.ai_panel
+                    self.ai_viewer = AIResultsViewer(id="ai-results")
+                    yield self.ai_viewer
+                    self.ai_panel = self.ai_viewer.panel
+
+                    self.config_widget = ConfigManagerWidget(self.config, id="config-widget")
+                    yield self.config_widget
 
             # Status Bar
             self.status_bar = StatusBarWidget(id="status-bar")
@@ -197,6 +210,12 @@ class GKELogProcessorApp(App):
             self.status_bar.set_processing_status("Ready")
             self.status_bar.update_connection_status("No cluster connected")
             self.status_bar.update_pods_info(0)
+
+        if self.config_widget:
+            self.config_widget.update_config(self.config)
+
+        if self.pod_selector:
+            self.pod_selector.namespace = self.config.kubernetes.default_namespace
 
         # Try to auto-connect if configuration is available
         self.call_later(self._try_auto_connect)
@@ -255,17 +274,24 @@ class GKELogProcessorApp(App):
     # Message handlers for component communication
     async def on_pod_list_widget_pod_selected(self, message: PodListWidget.PodSelected) -> None:
         """Handle pod selection from pod list."""
-        self.selected_pod = message.pod
-        self.logger.info(f"Pod selected: {message.pod.name}")
+        pod = message.pods[-1] if message.pods else None
+        if not pod:
+            return
+
+        self.selected_pod = pod
+        self.logger.info(f"Pod selected: {pod.name}")
 
         if self.status_bar:
-            self.status_bar.set_processing_status(f"Loading logs for {message.pod.name}")
+            self.status_bar.set_processing_status(f"Loading logs for {pod.name}")
+
+        if self.log_display:
+            self.log_display.clear_logs()
+            self.log_display.update_status(f"Loading logs for {pod.name}", streaming=self.log_display.streaming, source=pod.name)
 
         # Clear previous logs and load new ones
         if self.log_viewer:
-            self.log_viewer.clear_logs()
             # TODO: Implement actual log loading from GKE
-            await self._load_pod_logs(message.pod)
+            await self._load_pod_logs(pod)
 
     async def on_log_viewer_log_entry_selected(self, message: LogViewer.LogEntrySelected) -> None:
         """Handle log entry selection for AI analysis."""
@@ -281,6 +307,94 @@ class GKELogProcessorApp(App):
 
         # TODO: Implement actual AI query processing
         await self._process_ai_query(message.query)
+
+    async def on_pod_selector_namespace_changed(self, message: PodSelector.NamespaceChanged) -> None:
+        """Handle namespace filter changes."""
+
+        self.current_namespace = message.namespace
+        self.config.kubernetes.default_namespace = message.namespace
+
+        if self.status_bar and self.current_cluster:
+            self.status_bar.update_connection_status(f"{self.current_cluster} ({self.current_namespace})")
+            self.status_bar.set_processing_status(f"Namespace set to {message.namespace}")
+
+    async def on_pod_selector_refresh_requested(self, message: PodSelector.RefreshRequested) -> None:
+        """Handle refresh requests coming from the pod selector."""
+
+        await self._refresh_pod_list()
+
+    async def on_real_time_log_display_start_streaming(self, message: RealTimeLogDisplay.StartStreaming) -> None:
+        """Start streaming logs for the selected pod."""
+
+        if not self.selected_pod:
+            if self.log_display:
+                self.log_display.update_status("Select a pod to stream", streaming=False)
+            if self.status_bar:
+                self.status_bar.set_processing_status("No pod selected for streaming")
+            return
+
+        pod_name = self.selected_pod.name
+        if self.log_display:
+            self.log_display.update_status(f"Streaming logs for {pod_name}", streaming=True, source=pod_name)
+        if self.status_bar:
+            self.status_bar.set_processing_status(f"Streaming logs for {pod_name}")
+
+        await self._load_pod_logs(self.selected_pod)
+
+    async def on_real_time_log_display_pause_streaming(self, message: RealTimeLogDisplay.PauseStreaming) -> None:
+        """Pause log streaming."""
+
+        if self.log_display:
+            self.log_display.update_status("Streaming paused", streaming=False)
+        if self.status_bar:
+            self.status_bar.set_processing_status("Log streaming paused")
+
+    async def on_real_time_log_display_clear_logs(self, message: RealTimeLogDisplay.ClearLogs) -> None:
+        """Clear log display contents."""
+
+        if self.log_display:
+            self.log_display.clear_logs()
+            self.log_display.update_status("Logs cleared", streaming=self.log_display.streaming)
+        if self.status_bar:
+            self.status_bar.set_processing_status("Logs cleared")
+
+    async def on_real_time_log_display_export_logs(self, message: RealTimeLogDisplay.ExportLogs) -> None:
+        """Export current logs via the display widget."""
+
+        if not self.log_display:
+            return
+
+        data = self.log_display.export_logs(message.format_type)
+        self.logger.info("Exported %s log bytes", len(data))
+        if self.status_bar:
+            self.status_bar.set_processing_status(f"Logs exported as {message.format_type.upper()}")
+
+    async def on_config_manager_widget_edit_config_requested(
+        self, message: ConfigManagerWidget.EditConfigRequested
+    ) -> None:
+        """Open the configuration dialog from the summary widget."""
+
+        await self.action_open_config()
+
+    async def on_config_manager_widget_test_connection_requested(
+        self, message: ConfigManagerWidget.TestConnectionRequested
+    ) -> None:
+        """Trigger a connection test using current configuration."""
+
+        if self.status_bar:
+            self.status_bar.set_processing_status("Testing current connection...")
+
+        await self._refresh_pod_list()
+
+    async def on_config_manager_widget_reload_config_requested(
+        self, message: ConfigManagerWidget.ReloadConfigRequested
+    ) -> None:
+        """Reload configuration from in-memory state (placeholder)."""
+
+        if self.config_widget:
+            self.config_widget.update_config(self.config)
+        if self.status_bar:
+            self.status_bar.set_processing_status("Configuration reloaded")
 
     async def _load_pod_logs(self, pod: PodInfo) -> None:
         """Load logs for the selected pod."""
@@ -304,6 +418,13 @@ class GKELogProcessorApp(App):
             if self.log_viewer:
                 self.log_viewer.set_logs(sample_logs)
 
+            if self.log_display:
+                self.log_display.update_status(
+                    f"Streaming logs for {pod.name}",
+                    streaming=self.log_display.streaming,
+                    source=pod.name,
+                )
+
             if self.status_bar:
                 self.status_bar.set_processing_status(f"Loaded {len(sample_logs)} logs for {pod.name}")
 
@@ -311,6 +432,8 @@ class GKELogProcessorApp(App):
             self.logger.error(f"Failed to load logs for {pod.name}: {e}")
             if self.status_bar:
                 self.status_bar.set_processing_status(f"Error loading logs: {e}")
+            if self.log_display:
+                self.log_display.update_status(f"Failed to load logs for {pod.name}", streaming=False, source=pod.name)
 
     async def _process_ai_query(self, query: str) -> None:
         """Process an AI query."""
@@ -323,6 +446,20 @@ class GKELogProcessorApp(App):
             self.logger.error(f"AI query failed: {e}")
             if self.status_bar:
                 self.status_bar.set_processing_status(f"AI query error: {e}")
+
+    async def _refresh_pod_list(self) -> None:
+        """Placeholder for pod refresh logic."""
+
+        if self.status_bar:
+            self.status_bar.set_processing_status("Refreshing pod list...")
+
+        # TODO: Replace with real pod retrieval from Kubernetes API
+        await asyncio.sleep(0)
+
+        if self.status_bar:
+            pod_count = len(self.pod_list.pods) if self.pod_list else 0
+            self.status_bar.update_pods_info(pod_count)
+            self.status_bar.set_processing_status("Pod list updated")
 
     async def _handle_connection_request(self, connection_info: dict) -> None:
         """Handle connection request from dialog."""
@@ -358,9 +495,13 @@ class GKELogProcessorApp(App):
                 self.status_bar.set_processing_status(f"Connected to {connection_info['cluster_name']}")
                 self.status_bar.update_connection_status(f"{connection_info['cluster_name']} ({connection_info['namespace']})")
 
-            # Refresh pod list if available
-            if self.pod_list:
-                await self.pod_list.refresh_pods()
+            if self.config_widget:
+                self.config_widget.update_config(self.config)
+
+            if self.pod_selector:
+                self.pod_selector.namespace = connection_info["namespace"]
+
+            await self._refresh_pod_list()
 
         except Exception as e:
             self.logger.error(f"Connection failed: {e}")
@@ -378,6 +519,9 @@ class GKELogProcessorApp(App):
 
             # Update application configuration
             self.config = config
+
+            if self.config_widget:
+                self.config_widget.update_config(self.config)
 
             # TODO: Persist configuration to file
             # config.save_to_file("config.yaml")
@@ -427,8 +571,10 @@ class GKELogProcessorApp(App):
         if self.status_bar:
             self.status_bar.set_processing_status("Refreshing...")
 
-        if self.pod_list:
-            await self.pod_list.refresh_pods()
+        await self._refresh_pod_list()
+
+        if self.selected_pod:
+            await self._load_pod_logs(self.selected_pod)
 
         if self.status_bar:
             self.status_bar.set_processing_status("Refreshed")
