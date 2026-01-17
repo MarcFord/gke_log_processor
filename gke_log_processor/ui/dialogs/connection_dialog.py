@@ -71,7 +71,7 @@ class ConnectionDialog(ModalScreen):
     cluster_name: reactive[str] = reactive("")
     project_id: reactive[str] = reactive("")
     zone: reactive[str] = reactive("")
-    region: reactive[str] = reactive("")
+    region_value: reactive[str] = reactive("")
     namespace: reactive[str] = reactive("default")
     connection_type: reactive[str] = reactive("zone")
     selected_cluster: reactive[str] = reactive("__manual__")
@@ -98,7 +98,7 @@ class ConnectionDialog(ModalScreen):
             self.cluster_name = config.gke.cluster_name or ""
             self.project_id = config.gke.project_id or ""
             self.zone = config.gke.zone or ""
-            self.region = config.gke.region or ""
+            self.region_value = config.gke.region or ""
             self.namespace = config.kubernetes.default_namespace or "default"
 
             # Determine connection type
@@ -129,12 +129,12 @@ class ConnectionDialog(ModalScreen):
         self.namespace = cluster.namespace or "default"
         if cluster.region:
             self.connection_type = "region"
-            self.region = cluster.region
+            self.region_value = cluster.region
             self.zone = ""
         else:
             self.connection_type = "zone"
             self.zone = cluster.zone or ""
-            self.region = ""
+            self.region_value = ""
 
     def _refresh_form_inputs(self) -> None:
         """Synchronize widget values with the current reactive state."""
@@ -145,7 +145,7 @@ class ConnectionDialog(ModalScreen):
             if self.connection_type == "zone":
                 location_input.value = self.zone
             else:
-                location_input.value = self.region
+                location_input.value = self.region_value
             namespace_input = self.query_one("#namespace-input", Input)
             namespace_input.value = self.namespace
             type_select = self.query_one("#type-select", Select)
@@ -204,7 +204,7 @@ class ConnectionDialog(ModalScreen):
                 # Zone/Region
                 yield Label("Zone/Region:", id="location-label")
                 yield Input(
-                    value=self.zone or self.region,
+                    value=self.zone or self.region_value,
                     placeholder="us-central1-a or us-central1",
                     id="location-input"
                 )
@@ -252,9 +252,9 @@ class ConnectionDialog(ModalScreen):
         elif event.input.id == "location-input":
             if self.connection_type == "zone":
                 self.zone = event.value
-                self.region = ""
+                self.region_value = ""
             else:
-                self.region = event.value
+                self.region_value = event.value
                 self.zone = ""
         elif event.input.id == "namespace-input":
             self.namespace = event.value
@@ -271,7 +271,7 @@ class ConnectionDialog(ModalScreen):
                 location_input.value = self.zone
             else:
                 location_input.placeholder = "us-central1"
-                location_input.value = self.region
+                location_input.value = self.region_value
         elif event.select.id == "saved-cluster-select":
             self.selected_cluster = str(event.value)
             if self.selected_cluster == "__manual__":
@@ -348,7 +348,7 @@ class ConnectionDialog(ModalScreen):
             "cluster_name": self.cluster_name.strip(),
             "project_id": self.project_id.strip(),
             "zone": self.zone.strip() if self.connection_type == "zone" else "",
-            "region": self.region.strip() if self.connection_type == "region" else "",
+            "region": self.region_value.strip() if self.connection_type == "region" else "",
             "namespace": self.namespace.strip() or "default",
             "connection_type": self.connection_type
         }

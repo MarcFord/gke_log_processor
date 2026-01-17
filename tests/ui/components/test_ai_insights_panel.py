@@ -268,6 +268,43 @@ class TestAIInsightsPanel:
         content = insights_panel._render_summary()
         assert "No Summary Available" in content
 
+    def test_summary_display_triggers_analysis_when_logs_present(self, insights_panel):
+        """Selecting summary view should request analysis when logs are staged."""
+        insights_panel._current_logs = [Mock()]
+        insights_panel.summary_report = None
+
+        event = Mock()
+        event.select.id = "display-mode-select"
+        event.value = "summary"
+
+        with patch.object(insights_panel, "_sync_analysis_mode_to_display"), \
+                patch.object(insights_panel, "show_message") as mock_show, \
+                patch.object(insights_panel, "post_message") as mock_post:
+            insights_panel.on_select_changed(event)
+
+        mock_show.assert_called_once()
+        mock_post.assert_called_once()
+        assert insights_panel.display_mode == "summary"
+
+    def test_summary_display_does_not_trigger_without_logs(self, insights_panel):
+        """Ensure we do not auto-run summary when no logs are cached."""
+        insights_panel._current_logs = []
+        insights_panel.summary_report = None
+
+        event = Mock()
+        event.select.id = "display-mode-select"
+        event.value = "summary"
+
+        with patch.object(insights_panel, "_sync_analysis_mode_to_display"), \
+            patch.object(insights_panel, "_update_display"), \
+                patch.object(insights_panel, "show_message") as mock_show, \
+                patch.object(insights_panel, "post_message") as mock_post:
+            insights_panel.on_select_changed(event)
+
+        mock_show.assert_not_called()
+        mock_post.assert_not_called()
+        assert insights_panel.display_mode == "summary"
+
     def test_render_summary_with_data(self, insights_panel, sample_summary_report):
         """Test summary rendering with summary data."""
         insights_panel.summary_report = sample_summary_report
@@ -319,7 +356,7 @@ class TestAIInsightsPanel:
 
             # Mock button event
             mock_button = Mock()
-            mock_button.id = "analyze-button"
+            mock_button.id = "run-feature-button"
             event = Mock()
             event.button = mock_button
 

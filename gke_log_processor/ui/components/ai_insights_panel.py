@@ -3,6 +3,7 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set
 
+from rich.markdown import Markdown as RichMarkdown
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -16,7 +17,6 @@ from textual.widgets import (
     Collapsible,
     DataTable,
     Label,
-    Markdown,
     ProgressBar,
     Select,
     Static,
@@ -151,7 +151,7 @@ class AIInsightsPanel(Widget):
             # Header
             with Horizontal(classes="insights-header"):
                 yield Label("🧠 AI Insights", classes="header-label")
-                yield Button("🔄 Analyze", id="analyze-button", variant="primary")
+                yield Button("▶ Run", id="run-feature-button", variant="success")
                 yield Button("💬 Query", id="query-button", variant="default")
 
             # Controls
@@ -190,13 +190,43 @@ class AIInsightsPanel(Widget):
         """Handle select changes."""
         if event.select.id == "display-mode-select":
             self.display_mode = event.value
+            self._sync_analysis_mode_to_display()
+
+            should_auto_summary = (
+                self.display_mode == "summary"
+                and self.summary_report is None
+                and bool(self._current_logs)
+            )
+
+            if should_auto_summary:
+                self.show_message("Generating summary...", switch_to="summary")
+                self.post_message(self.AnalysisRequested("summary"))
+                return
+
             self._update_display()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses."""
         button_id = event.button.id
-        if button_id == "analyze-button":
+        if button_id == "run-feature-button":
+            display_select = self.query_one("#display-mode-select", Select)
             analysis_type_select = self.query_one("#analysis-type-select", Select)
+            mode = display_select.value
+
+            if mode == "query":
+                self._show_query_dialog()
+                return
+
+            default_analysis = {
+                "overview": "comprehensive",
+                "patterns": "patterns",
+                "summary": "summary",
+                "recommendations": "comprehensive",
+            }
+            desired = default_analysis.get(mode)
+            if desired and analysis_type_select.value != desired:
+                analysis_type_select.value = desired
+
             self.post_message(self.AnalysisRequested(analysis_type_select.value))
         elif button_id == "query-button":
             self._show_query_dialog()
@@ -228,20 +258,49 @@ class AIInsightsPanel(Widget):
         self.query_response = None
         self._update_display()
 
+    def _sync_analysis_mode_to_display(self) -> None:
+        """Align analysis type selection with the display mode."""
+
+        analysis_select = self.query_one("#analysis-type-select", Select)
+        mapping = {
+            "overview": "comprehensive",
+            "patterns": "patterns",
+            "summary": "summary",
+            "recommendations": "comprehensive",
+        }
+        desired = mapping.get(self.display_mode)
+        if desired and analysis_select.value != desired:
+            analysis_select.value = desired
+
     def _update_display(self) -> None:
         """Update the display based on current mode and data."""
         content = self.query_one("#insights-display", Static)
 
-        if self.display_mode == "overview":
-            content.update(self._render_overview())
-        elif self.display_mode == "patterns":
-            content.update(self._render_patterns())
-        elif self.display_mode == "summary":
-            content.update(self._render_summary())
-        elif self.display_mode == "recommendations":
-            content.update(self._render_recommendations())
-        elif self.display_mode == "query":
-            content.update(self._render_query_results())
+        render_mapping = {
+            "overview": self._render_overview,
+            "patterns": self._render_patterns,
+            "summary": self._render_summary,
+            "recommendations": self._render_recommendations,
+            "query": self._render_query_results,
+        }
+
+        renderer = render_mapping.get(self.display_mode)
+        if renderer is None:
+            content.update(RichMarkdown("No content available."))
+            return
+
+        content.update(RichMarkdown(renderer()))
+
+    def show_message(self, message: str, *, switch_to: Optional[str] = None) -> None:
+        """Display a transient informational message to the user."""
+
+        if switch_to and switch_to != self.display_mode:
+            display_select = self.query_one("#display-mode-select", Select)
+            display_select.value = switch_to
+            self.display_mode = switch_to
+
+        content = self.query_one("#insights-display", Static)
+        content.update(RichMarkdown(message))
 
     def _render_overview(self) -> str:
         """Render overview of all available insights."""

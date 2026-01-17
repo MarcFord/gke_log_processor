@@ -1,8 +1,10 @@
 """Log viewer widget with syntax highlighting and real-time updates."""
 
+import csv
 from collections import deque
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Set
+from io import StringIO
+from typing import Any, Dict, List, Optional, Sequence, Set
 
 from rich.console import Console
 from rich.style import Style
@@ -121,6 +123,7 @@ class LogViewer(Widget):
         self._rich_console = Console()
         self._search_matches: Set[int] = set()
         self._current_search: str = ""
+        self._pod_option_values: List[Optional[str]] = []
 
     def compose(self) -> ComposeResult:
         """Compose the log viewer widget."""
@@ -207,7 +210,7 @@ class LogViewer(Widget):
         """Handle button presses."""
         button_id = event.button.id
         if button_id == "export-button":
-            self.post_message(self.ExportRequested("txt"))
+            self.post_message(self.ExportRequested("prompt"))
         elif button_id == "search-button":
             search_input = self.query_one("#search-input", Input)
             self._perform_search(search_input.value)
@@ -253,13 +256,19 @@ class LogViewer(Widget):
         self._refresh_display()
 
     def export_logs(self, format_type: str = "txt") -> str:
-        """Export current filtered logs to string."""
-        if format_type == "txt":
+        """Export current filtered logs to a serialized string."""
+        format_type = (format_type or "txt").lower()
+
+        if format_type in {"txt", "text"}:
             return self._export_as_text()
-        elif format_type == "json":
+        if format_type == "json":
             return self._export_as_json()
-        else:
-            return self._export_as_text()
+        if format_type == "csv":
+            return self._export_as_csv()
+        if format_type == "pdf":
+            return self._export_as_pdf()
+
+        return self._export_as_text()
 
     def search_logs(self, query: str) -> int:
         """Search logs and return number of matches."""
@@ -418,26 +427,133 @@ class LogViewer(Widget):
         current_value = pod_select.value
 
         # Only update if options changed
-        current_options = [option[1] for option in pod_select.options]
         new_options = [option[1] for option in pod_options]
 
-        if current_options != new_options:
+        if self._pod_option_values != new_options:
             pod_select.set_options(pod_options)
             if current_value in new_options:
                 pod_select.value = current_value
+            self._pod_option_values = new_options
+
+    def _build_export_rows(self) -> Sequence[Dict[str, Any]]:
+        """Return structured rows for export operations."""
+        rows: List[Dict[str, Any]] = []
+
+        for entry in self._filtered_entries:
+            rows.append(
+                {
+                    "timestamp": entry.timestamp.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
+                    "level": entry.level.value if entry.level else "INFO",
+                    "pod": entry.pod_name,
+                    "container": entry.container_name,
+                    "namespace": entry.namespace,
+                    "cluster": entry.cluster,
+                    "message": entry.message,
+                }
+            )
+
+        return rows
 
     def _export_as_text(self) -> str:
         """Export logs as plain text."""
+        rows = self._build_export_rows()
+        if not rows:
+            return ""
+
         lines = []
-        for entry in self._filtered_entries:
-            timestamp = entry.timestamp.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-            level = entry.level.value if entry.level else "INFO"
-            pod_info = f"{entry.pod_name}/{entry.container_name}" if entry.container_name else entry.pod_name
-            lines.append(f"[{timestamp}] [{level}] [{pod_info}] {entry.message}")
-        return "\\n".join(lines)
+        for row in rows:
+            pod_info = f"{row['pod']}/{row['container']}" if row["container"] else row["pod"]
+            lines.append(
+                f"[{row['timestamp']}] [{row['level']}] [{pod_info}] {row['message']}"
+            )
+        return "\n".join(lines)
 
     def _export_as_json(self) -> str:
         """Export logs as JSON."""
         import json
         return json.dumps([entry.model_dump() for entry in self._filtered_entries],
                           indent=2, default=str)
+
+    def _export_as_csv(self) -> str:
+        """Export logs as CSV."""
+        rows = self._build_export_rows()
+        output = StringIO()
+        writer = csv.DictWriter(
+            output,
+            fieldnames=["timestamp", "level", "pod", "container", "namespace", "cluster", "message"],
+        )
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+        return output.getvalue()
+
+    def _export_as_pdf(self) -> str:
+        """Export logs as a minimal PDF document."""
+        rows = self._build_export_rows()
+        lines = [
+            f"{row['timestamp']} | {row['level']} | {row['pod']} | {row['container']} | {row['namespace']} | {row['message']}"
+            for row in rows
+        ]
+
+        if not lines:
+            lines = ["No log entries available."]
+
+        def _escape(text: str) -> str:
+            return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+        escaped_lines = [_escape(line)[:400] for line in lines]
+
+        content_parts = [
+            "BT",
+            "/F1 10 Tf",
+            "72 750 Td",
+        ]
+
+        for index, text in enumerate(escaped_lines):
+            if index == 0:
+                content_parts.append(f"({text}) Tj")
+            else:
+                content_parts.append("T*")
+                content_parts.append(f"({text}) Tj")
+
+        content_parts.append("ET")
+        content_stream = "\n".join(content_parts)
+        stream_bytes = content_stream.encode("latin-1", "replace")
+
+        objects: List[str] = []
+
+        objects.append("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+        objects.append("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+        objects.append(
+            "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            "/Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n"
+        )
+        objects.append(
+            "4 0 obj\n<< /Length {length} >>\nstream\n{stream}\nendstream\nendobj\n".format(
+                length=len(stream_bytes), stream=content_stream
+            )
+        )
+        objects.append(
+            "5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n"
+        )
+
+        pdf_body = "%PDF-1.4\n"
+        offsets = [0]
+        for obj in objects:
+            offsets.append(len(pdf_body.encode("latin-1")))
+            pdf_body += obj
+
+        xref_position = len(pdf_body.encode("latin-1"))
+        pdf_body += "xref\n"
+        pdf_body += f"0 {len(objects) + 1}\n"
+        pdf_body += "0000000000 65535 f \n"
+        for offset in offsets[1:]:
+            pdf_body += f"{offset:010d} 00000 n \n"
+
+        pdf_body += "trailer\n"
+        pdf_body += f"<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
+        pdf_body += "startxref\n"
+        pdf_body += f"{xref_position}\n"
+        pdf_body += "%%EOF\n"
+
+        return pdf_body

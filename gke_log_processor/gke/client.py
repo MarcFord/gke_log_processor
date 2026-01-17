@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 from google.api_core import exceptions as gcp_exceptions
 from google.auth import default
 from google.auth.credentials import Credentials
+from google.auth.transport.requests import Request
 from google.cloud import container_v1
 from kubernetes import client as k8s_client  # type: ignore[import-untyped]
 from kubernetes.client import ApiException  # type: ignore[import-untyped]
@@ -146,7 +147,7 @@ class GKEClient:
             configuration.verify_ssl = True
 
             # Set up authentication
-            self.credentials.refresh(default()[1])  # Refresh credentials
+            self.credentials.refresh(Request())
             configuration.api_key_prefix['authorization'] = 'Bearer'
             configuration.api_key['authorization'] = self.credentials.token
 
@@ -389,7 +390,7 @@ class GKEClient:
             configuration.verify_ssl = True
 
             # Set up authentication
-            self.credentials.refresh(default()[1])  # Refresh credentials
+            self.credentials.refresh(Request())
             configuration.api_key_prefix['authorization'] = 'Bearer'
             configuration.api_key['authorization'] = self.credentials.token
 

@@ -80,6 +80,12 @@ class AIResultsViewer(Widget):
         self._status.update("No analysis yet")
         self._panel.clear_insights()
 
+    def show_message(self, message: str, *, switch_to: Optional[str] = None) -> None:
+        """Proxy helper to surface informational messages."""
+
+        self._status.update(message)
+        self._panel.show_message(message, switch_to=switch_to)
+
     # Internal ----------------------------------------------------------
     def _update_status_from_severity(self) -> None:
         if not self.latest_severity:

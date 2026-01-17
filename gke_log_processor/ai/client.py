@@ -508,7 +508,7 @@ Log Entries ({len(sample_logs)} of {len(log_entries)} total):
         style_instruction = {
             "executive": "Create an executive summary suitable for management",
             "technical": "Create a technical summary for engineers and DevOps teams",
-            "brief": "Create a brief, bullet-point summary"
+            "brief": "Create a brief, bullet-point summary for a developer to quickly understand if there are any issues"
         }.get(summary_style, "Create a general summary")
 
         prompt = f"""Summarize the following Kubernetes pod logs in {max_length} words or less.

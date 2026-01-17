@@ -1,7 +1,6 @@
 """Tests for the LogViewer component."""
 
 from datetime import datetime, timezone
-from io import StringIO
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
@@ -262,10 +261,8 @@ class TestLogViewer:
         """Test exporting logs to text format."""
         log_viewer.set_logs(sample_logs)
 
-        output = StringIO()
-        log_viewer._export_to_text(output)
+        content = log_viewer.export_logs("txt")
 
-        content = output.getvalue()
         assert "INFO: Application started successfully" in content
         assert "WARN: High memory usage detected" in content
         assert "ERROR: Database connection failed" in content
@@ -276,16 +273,32 @@ class TestLogViewer:
 
         log_viewer.set_logs(sample_logs)
 
-        output = StringIO()
-        log_viewer._export_to_json(output)
-
-        content = output.getvalue()
+        content = log_viewer.export_logs("json")
         data = json.loads(content)
 
         assert len(data) == 3
         assert data[0]["message"] == "INFO: Application started successfully"
         assert data[1]["level"] == "WARNING"
         assert data[2]["pod_name"] == "app-pod-2"
+
+    def test_export_to_csv(self, log_viewer, sample_logs):
+        """Test exporting logs to CSV format."""
+        log_viewer.set_logs(sample_logs)
+
+        content = log_viewer.export_logs("csv")
+        lines = [line for line in content.splitlines() if line]
+
+        assert lines[0].startswith("timestamp,level,pod,container")
+        assert any("ERROR: Database connection failed" in line for line in lines)
+
+    def test_export_to_pdf(self, log_viewer, sample_logs):
+        """Test exporting logs to PDF format."""
+        log_viewer.set_logs(sample_logs)
+
+        content = log_viewer.export_logs("pdf")
+
+        assert content.startswith("%PDF-1.4")
+        assert "%%EOF" in content
 
     @pytest.mark.asyncio
     async def test_search_input(self, app_with_log_viewer, sample_logs):
@@ -373,6 +386,7 @@ class TestLogViewer:
                 mock_post.assert_called_once()
                 args = mock_post.call_args[0]
                 assert hasattr(args[0], '__class__')
+                assert getattr(args[0], 'format_type') == 'prompt'
 
     def test_get_unique_pods(self, log_viewer, sample_logs):
         """Test getting unique pod names."""
@@ -386,8 +400,8 @@ class TestLogViewer:
     def test_message_classes_exist(self, log_viewer):
         """Test that message classes are properly defined."""
         # Test message classes exist and are instantiable
-        export_msg = log_viewer.ExportRequested("text")
-        assert export_msg.format == "text"
+        export_msg = log_viewer.ExportRequested("prompt")
+        assert export_msg.format_type == "prompt"
 
         search_msg = log_viewer.SearchChanged("test query")
         assert search_msg.query == "test query"

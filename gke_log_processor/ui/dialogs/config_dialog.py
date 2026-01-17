@@ -185,8 +185,9 @@ class ConfigDialog(ModalScreen):
 
     def _refresh_gke_inputs(self) -> None:
         try:
-            self.query_one("#cluster-select", Select).options = self._cluster_options()
-            self.query_one("#cluster-select", Select).value = self.selected_cluster
+            cluster_select = self.query_one("#cluster-select", Select)
+            cluster_select.set_options(self._cluster_options())
+            cluster_select.value = self.selected_cluster
         except Exception:
             pass
         try:
@@ -222,15 +223,17 @@ class ConfigDialog(ModalScreen):
 
     def _refresh_profile_inputs(self) -> None:
         try:
-            self.query_one("#profile-select", Select).options = self._profile_options()
-            self.query_one("#profile-select", Select).value = self.selected_profile
+            profile_select = self.query_one("#profile-select", Select)
+            profile_select.set_options(self._profile_options())
+            profile_select.value = self.selected_profile
         except Exception:
             pass
         try:
             self.query_one("#profile-name-input", Input).value = self.profile_form.get("name", "")
-            self.query_one("#profile-cluster-select", Select).options = self._cluster_options()
+            cluster_select = self.query_one("#profile-cluster-select", Select)
+            cluster_select.set_options(self._cluster_options())
             cluster_value = self.profile_form.get("cluster") or "__new__"
-            self.query_one("#profile-cluster-select", Select).value = cluster_value
+            cluster_select.value = cluster_value
             self.query_one("#profile-namespace-input", Input).value = self.profile_form.get("namespace", "")
             self.query_one("#profile-description-input", TextArea).value = self.profile_form.get("description", "")
         except Exception:
@@ -240,7 +243,7 @@ class ConfigDialog(ModalScreen):
     def _refresh_template_inputs(self) -> None:
         try:
             template_select = self.query_one("#template-select", Select)
-            template_select.options = self._template_options()
+            template_select.set_options(self._template_options())
             if self.selected_template:
                 template_select.value = self.selected_template
         except Exception:

@@ -130,7 +130,7 @@ class RealTimeLogDisplay(Widget):
         elif event.button.id == "clear-logs":
             self.post_message(self.ClearLogs())
         elif event.button.id == "export-logs":
-            self.post_message(self.ExportLogs("txt"))
+            self.post_message(self.ExportLogs("prompt"))
 
     def add_placeholder_log(self, message: str, level: str = "INFO") -> None:
         """Utility for tests: append a synthetic log entry."""

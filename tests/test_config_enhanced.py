@@ -11,9 +11,9 @@ import pytest
 from pydantic import ValidationError
 
 from gke_log_processor.core.config import (
+    AIConfig,
     ClusterConfig,
     Config,
-    GeminiConfig,
     LoggingConfig,
     StreamingConfig,
     UIConfig,
@@ -158,7 +158,7 @@ class TestConfig:
         assert config.namespace == "default"
         assert config.verbose is False
         assert len(config.clusters) == 0
-        assert isinstance(config.gemini, GeminiConfig)
+        assert isinstance(config.gemini, AIConfig)
         assert isinstance(config.ui, UIConfig)
         assert isinstance(config.logging, LoggingConfig)
         assert isinstance(config.streaming, StreamingConfig)
@@ -189,7 +189,7 @@ clusters:
     namespace: production
 
 gemini:
-  model: gemini-pro
+  model_name: gemini-pro
   temperature: 0.2
 
 ui:
@@ -221,7 +221,7 @@ streaming:
             assert cluster.namespace == "production"
 
             # Check other configurations
-            assert config.gemini.model == "gemini-pro"
+            assert config.gemini.model_name == "gemini-pro"
             assert config.gemini.temperature == 0.2
             assert config.ui.theme == "light"
             assert config.ui.refresh_rate == 500
@@ -242,7 +242,7 @@ clusters:
     zone: us-central1-a
 
 gemini:
-  api_key: ${GEMINI_API_KEY}
+  gemini_api_key: ${GEMINI_API_KEY}
 """
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
@@ -263,7 +263,7 @@ gemini:
             cluster = config.clusters[0]
             assert cluster.name == "my-cluster"
             assert cluster.project_id == "my-project"
-            assert config.gemini.api_key == "test-key"
+            assert config.gemini.gemini_api_key == "test-key"
 
         finally:
             os.unlink(temp_path)
@@ -299,7 +299,7 @@ gemini:
                 name="test-cluster", project_id="test-project", zone="us-central1-a"
             )
         ]
-        config.gemini.model = "gemini-pro"
+        config.gemini.model_name = "gemini-pro"
         config.ui.theme = "light"
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
@@ -316,7 +316,7 @@ gemini:
             loaded_config = Config.load_from_file(temp_path)
             assert len(loaded_config.clusters) == 1
             assert loaded_config.clusters[0].name == "test-cluster"
-            assert loaded_config.gemini.model == "gemini-pro"
+            assert loaded_config.gemini.model_name == "gemini-pro"
             assert loaded_config.ui.theme == "light"
 
         finally:
@@ -341,7 +341,7 @@ gemini:
 
             assert "# GKE Log Processor Configuration" in content
             assert "clusters:" in content
-            assert "gemini:" in content
+            assert "ai:" in content
             assert "ui:" in content
             assert "logging:" in content
             assert "streaming:" in content
@@ -391,7 +391,7 @@ logging:
 
         # Should have warnings about missing configuration
         warning_messages = " ".join(warnings)
-        assert "No clusters configured" in warning_messages
+        assert "No active cluster configured" in warning_messages
         assert "Gemini API key not configured" in warning_messages
 
     def test_current_cluster_property(self):

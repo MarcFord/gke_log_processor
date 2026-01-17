@@ -8,8 +8,7 @@ from google.cloud import container_v1
 from kubernetes.client import ApiException
 
 from gke_log_processor.core.config import Config
-from gke_log_processor.core.exceptions import (ConfigurationError,
-                                               GKEConnectionError)
+from gke_log_processor.core.exceptions import ConfigurationError, GKEConnectionError
 from gke_log_processor.gke.client import ClusterInfo, GKEClient
 
 
@@ -115,8 +114,8 @@ class TestGKEClient:
     @pytest.fixture
     def sample_config(self):
         """Sample configuration for testing."""
-        return Config(
-            cluster_name="test-cluster",
-            project_id="test-project",
-            zone="us-central1-a"
-        )
+        config = Config()
+        config.gke.cluster_name = "test-cluster"
+        config.gke.project_id = "test-project"
+        config.gke.zone = "us-central1-a"
+        return config

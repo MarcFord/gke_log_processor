@@ -417,6 +417,25 @@ class Config(BaseSettings):
         description="Paths searched when a config file is not explicitly provided",
     )
 
+    @model_validator(mode="after")
+    def _apply_active_context(self) -> "Config":
+        """Reapply active profile or cluster so derived fields stay in sync."""
+        if self.active_profile:
+            try:
+                self.apply_profile(self.active_profile)
+                return self
+            except ValueError:
+                # Leave inconsistent state for downstream validation warnings
+                return self
+
+        if self.active_cluster:
+            try:
+                self.set_active_cluster(self.active_cluster)
+            except ValueError:
+                pass
+
+        return self
+
     @property
     def gemini(self) -> AIConfig:
         """Provide backwards compatible access to AI configuration."""

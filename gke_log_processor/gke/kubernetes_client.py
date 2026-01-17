@@ -1,10 +1,6 @@
-"""
-Kubernetes client for pod discovery, selection, and monitoring.
+"""Kubernetes client for pod discovery, selection, and monitoring."""
 
-This module provides a high-level interface for interacting with Kubernetes
-clusters through the Kubernetes Python client library.
-"""
-
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
@@ -387,6 +383,53 @@ class KubernetesClient:
         self._pod_cache.clear()
         self._cache_timestamp.clear()
         logger.debug("Pod cache cleared")
+
+    async def get_pod_logs(
+        self,
+        name: str,
+        namespace: str = "default",
+        *,
+        container: Optional[str] = None,
+        tail_lines: int = 200,
+        timestamps: bool = True,
+        previous: bool = False,
+    ) -> List[str]:
+        """Retrieve recent log lines for a pod."""
+
+        try:
+            api = self._get_api()
+            log_data = await asyncio.to_thread(
+                api.read_namespaced_pod_log,
+                name=name,
+                namespace=namespace,
+                container=container,
+                tail_lines=tail_lines,
+                timestamps=timestamps,
+                follow=False,
+                previous=previous,
+            )
+
+            if not log_data:
+                return []
+
+            return [line for line in log_data.splitlines() if line.strip()]
+
+        except ApiException as e:
+            logger.error(
+                "Failed to read logs for pod '%s/%s' (container=%s): %s",
+                namespace,
+                name,
+                container,
+                e,
+            )
+            if e.status == 404:
+                raise PodNotFoundError(
+                    f"Pod '{namespace}/{name}' not found when fetching logs"
+                ) from e
+            raise KubernetesConnectionError(f"Failed to read pod logs: {e}") from e
+        except Exception as e:  # pragma: no cover - defensive logging
+            logger.error("Unexpected error reading pod logs: %s", e)
+            raise KubernetesConnectionError(f"Unexpected error reading logs: {e}") from e
 
     async def validate_connection(self) -> bool:
         """
