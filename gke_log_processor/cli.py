@@ -633,6 +633,7 @@ def ai_summary(
     help="Number of recent log lines to analyze (defaults to streaming.tail_lines)",
 )
 @click.option("--filter", "-f", "filter_pattern", help="Regex pattern to filter log messages")
+@click.option("--ai", "ai_enabled", is_flag=True, default=False, help="Enable AI analysis")
 def logs(
     ctx: click.Context,
     pod_name: Optional[str],
@@ -648,6 +649,7 @@ def logs(
     config_file: Optional[str],
     gemini_api_key: Optional[str],
     verbose: bool,
+    ai_enabled: bool,
 ) -> None:
     """View logs from a pod or multiple pods with regex support."""
     import re
@@ -793,19 +795,19 @@ def logs(
 
         # Process aggregated logs
         # This part handles the 'if pod_regex' branch continuation
-        service = LogProcessingService(config)
-        analysis = asyncio.run(service.analyze_logs(log_entries, analysis_type="comprehensive"))
-        summary = asyncio.run(service.summarize_logs(log_entries, ai_summary=analysis.summary))
-        
-        artifacts = SummaryArtifacts(
-            analysis=analysis,
-            summary=summary,
-            log_entries=log_entries,
-            container_name=container,
-            pod_namespace=namespace
-        )
-        
-        _render_summary(source_desc, namespace, artifacts)
+        if ai_enabled:
+            service = LogProcessingService(config)
+            analysis = asyncio.run(service.analyze_logs(log_entries, analysis_type="comprehensive"))
+            summary = asyncio.run(service.summarize_logs(log_entries, ai_summary=analysis.summary))
+            
+            artifacts = SummaryArtifacts(
+                analysis=analysis,
+                summary=summary,
+                log_entries=log_entries,
+                container_name=container,
+                pod_namespace=namespace
+            )
+            _render_summary(source_desc, namespace, artifacts)
 
     except GKELogProcessorError as error:
         console.print(f"[red]Cluster error: {error}[/red]")
