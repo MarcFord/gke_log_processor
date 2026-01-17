@@ -682,6 +682,10 @@ class LogAnalysisEngine:
                     overall_severity = ai_result.overall_severity
             except Exception as e:
                 self.logger.warning(f"AI analysis failed, using rule-based analysis only: {e}")
+                # Propagate error details to result metadata
+                ai_insights = [f"AI Analysis Failed: {str(e)}"]
+                recommendations.append("AI analysis unavailable - check configuration and logs")
+
 
         # Generate recommendations from patterns
         pattern_recommendations = self._generate_pattern_recommendations(patterns)

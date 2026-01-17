@@ -370,9 +370,8 @@ class GeminiClient:
             str: The response text
         """
         try:
-            # Generate content with new API
-            response = await asyncio.to_thread(
-                self.client.models.generate_content,
+            # Generate content with new API using async client
+            response = await self.client.aio.models.generate_content(
                 model=self.config.model,
                 contents=prompt,
                 config=types.GenerateContentConfig(
@@ -384,10 +383,17 @@ class GeminiClient:
                 )
             )
 
-            if not response.text:
-                raise GeminiError("Empty response from Gemini API")
-
-            return response.text.strip()
+            # Check for valid text in response
+            try:
+                if not response.text:
+                   raise ValueError("Empty response text")
+                return response.text.strip()
+            except ValueError:
+                 # Check if response was blocked or has other issues
+                 finish_reason = getattr(response.candidates[0], 'finish_reason', 'UNKNOWN') if response.candidates else 'NO_CANDIDATES'
+                 error_msg = f"Gemini response invalid/blocked. Finish reason: {finish_reason}"
+                 self.logger.warning(error_msg)
+                 raise GeminiError(error_msg)
 
         except Exception as e:
             self.logger.error(f"API call failed: {e}")

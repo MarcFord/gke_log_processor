@@ -403,6 +403,11 @@ class GKELogProcessorApp(App):
                 if summary_report:
                     self.ai_viewer.update_summary(summary_report)
 
+                # Check for AI failure in metadata or insights
+                ai_failed = any("AI Analysis Failed" in s for s in result.anomalies)
+                if ai_failed:
+                    self.notify("AI analysis failed - falling back to rule-based insights", severity="warning")
+
             if self.status_bar:
                 self.status_bar.set_processing_status(
                     f"Analysis complete · severity {result.overall_severity.value}")
