@@ -2,7 +2,6 @@
 
 A powerful CLI application for monitoring and analyzing Google Kubernetes Engine (GKE) pod logs with AI-powered insights using Gemini AI.
 
-## Overview
 
 ![TUI Interface](docs/TUI.png)
 
