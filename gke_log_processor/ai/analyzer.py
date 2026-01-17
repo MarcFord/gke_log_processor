@@ -566,7 +566,7 @@ class PatternRecognitionEngine:
 class BatchProcessor:
     """Efficient batch processing for large log volumes."""
 
-    def __init__(self, batch_size: int = 1000, max_concurrent_batches: int = 5):
+    def __init__(self, batch_size: int = 5000, max_concurrent_batches: int = 5):
         self.batch_size = batch_size
         self.max_concurrent_batches = max_concurrent_batches
         self.semaphore = asyncio.Semaphore(max_concurrent_batches)
@@ -642,7 +642,8 @@ class LogAnalysisEngine:
         self,
         log_entries: List[LogEntry],
         use_ai: bool = True,
-        analysis_type: str = "comprehensive"
+        analysis_type: str = "comprehensive",
+        skip_pattern_ai: bool = False
     ) -> AIAnalysisResult:
         """Perform comprehensive log analysis combining multiple techniques."""
         if not log_entries:
@@ -660,7 +661,10 @@ class LogAnalysisEngine:
         overall_severity = self._calculate_overall_severity(severity_scores)
 
         # Pattern detection
-        patterns = await self._detect_all_patterns(log_entries)
+        patterns = await self._detect_all_patterns(
+            log_entries, 
+            use_ai=use_ai and not skip_pattern_ai
+        )
 
         # Error analysis
         error_rate, warning_rate = self._calculate_error_rates(log_entries)
@@ -669,14 +673,20 @@ class LogAnalysisEngine:
         # AI analysis (if available and requested)
         ai_insights = []
         recommendations = []
+        ai_summary = None
         confidence_score = 0.7  # Base confidence from rule-based analysis
 
         if use_ai and self.gemini_client:
             try:
                 ai_result = await self.gemini_client.analyze_logs(log_entries, analysis_type)
-                ai_insights = [ai_result.summary] if hasattr(ai_result, 'summary') else []
+                ai_summary = ai_result.summary
+                ai_insights = [ai_summary] if ai_summary else []
                 recommendations = ai_result.recommendations
                 confidence_score = max(confidence_score, ai_result.confidence_score)
+                # Merge patterns from AI if skip_pattern_ai was used or to complement
+                if ai_result.detected_patterns:
+                    patterns.extend(ai_result.detected_patterns)
+                    patterns = self._deduplicate_patterns(patterns)
                 # Use AI severity if higher confidence
                 if ai_result.confidence_score > 0.8:
                     overall_severity = ai_result.overall_severity
@@ -709,6 +719,7 @@ class LogAnalysisEngine:
             anomalies=ai_insights,
             recommendations=list(set(recommendations)),  # Remove duplicates
             tags=[analysis_type, "comprehensive-analysis"],
+            summary=ai_summary,
             metadata={
                 "analysis_method": "hybrid_rule_ai" if use_ai and self.gemini_client else "rule_based",
                 "patterns_detected": len(patterns),
@@ -751,8 +762,8 @@ class LogAnalysisEngine:
         """Analyze severity distribution across log entries."""
         severity_counts = defaultdict(int)
 
-        # Use batch processing for large datasets
-        if len(log_entries) > 1000:
+        # Use batch processing for very large datasets
+        if len(log_entries) > 5000:
             batch_results = await self.batch_processor.process_logs_in_batches(
                 log_entries, self._analyze_batch_severity
             )
@@ -768,15 +779,15 @@ class LogAnalysisEngine:
 
         return dict(severity_counts)
 
-    def _analyze_batch_severity(self, batch: List[LogEntry]) -> Dict[str, int]:
+    def _analyze_batch_severity(self, batch: List[LogEntry]) -> List[Dict[str, int]]:
         """Analyze severity for a batch of logs (sync function for thread pool)."""
         severity_counts = defaultdict(int)
         for log in batch:
             severity = self.severity_detector.detect_combined_severity(log)
             severity_counts[severity.value] += 1
-        return dict(severity_counts)
+        return [dict(severity_counts)]
 
-    async def _detect_all_patterns(self, log_entries: List[LogEntry]) -> List[DetectedPattern]:
+    async def _detect_all_patterns(self, log_entries: List[LogEntry], use_ai: bool = True) -> List[DetectedPattern]:
         """Detect all types of patterns in log entries."""
         all_patterns = []
 
@@ -900,7 +911,7 @@ class LogAnalysisEngine:
                 # If similar pattern exists, merge information
                 existing = next(p for p in unique_patterns
                                 if (p.type, p.pattern, p.severity) == signature)
-                existing.occurrences += pattern.occurrences
+                existing.occurrence_count += pattern.occurrence_count
                 existing.confidence = max(existing.confidence, pattern.confidence)
 
         return unique_patterns

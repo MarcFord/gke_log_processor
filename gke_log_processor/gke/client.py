@@ -417,6 +417,9 @@ class GKEClient:
     def close(self):
         """Clean up resources."""
         if self._k8s_client:
-            self._k8s_client.close()
+            try:
+                self._k8s_client.close()
+            except Exception:
+                pass
         # Container client doesn't need explicit cleanup
         logger.info("GKE client resources cleaned up")

@@ -31,6 +31,9 @@ dependencies = [
     "pydantic-settings>=2.12.0",
     "pyyaml>=6.0.3",
     "structlog>=24.5.0",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "websockets>=13.0",
 ]
 
 [project.urls]

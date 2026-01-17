@@ -416,7 +416,8 @@ class GeminiClient:
             str: The constructed prompt
         """
         # Limit the number of logs for analysis to avoid token limits
-        max_logs = 50 if analysis_type == "comprehensive" else 30
+        # Higher limit for analysis to allow for a more "true" summary
+        max_logs = 5000 if analysis_type == "comprehensive" else 1000
         sample_logs = log_entries[:max_logs]
 
         # Build context information
@@ -445,6 +446,7 @@ Please analyze these logs and provide:
 4. Performance Insights
 5. Security Concerns (if any)
 6. Recommended Actions
+7. Executive Summary (Concise overview of system health and key events)
 
 Log Entries:
 """
@@ -465,7 +467,7 @@ Log Entries:
         pattern_types: Optional[List[str]] = None
     ) -> str:
         """Build a prompt for pattern detection."""
-        max_logs = 100
+        max_logs = 5000
         sample_logs = log_entries[:max_logs]
 
         pattern_focus = ""
@@ -508,7 +510,7 @@ Log Entries ({len(sample_logs)} of {len(log_entries)} total):
         max_length: int
     ) -> str:
         """Build a prompt for log summarization."""
-        max_logs = 200
+        max_logs = 5000
         sample_logs = log_entries[:max_logs]
 
         style_instruction = {
@@ -604,6 +606,38 @@ Log Entries ({len(sample_logs)} of {len(log_entries)} total):
                 if len(recommendations) >= 5:  # Limit recommendations
                     break
 
+        # Extract summary (look for summary section or use heuristic)
+        summary = ""
+        in_summary = False
+        for line in lines:
+            line = line.strip()
+            if any(word in line.lower() for word in ['summary', 'overview']):
+                in_summary = True
+            elif in_summary and line and not line.startswith('#'):
+                summary += line + " "
+                if len(summary) > 500: # Limit summary length
+                    break
+
+        # Extract patterns (simple parsing)
+        detected_patterns = []
+        in_patterns = False
+        for line in lines:
+            line = line.strip()
+            if any(word in line.lower() for word in ['pattern', 'issue', 'detected']):
+                in_patterns = True
+            elif in_patterns and line and (line.startswith('-') or line.startswith('*') or line[0].isdigit()):
+                from ..core.models import PatternType
+                detected_patterns.append(DetectedPattern(
+                    type=PatternType.ERROR_PATTERN,
+                    pattern=line.strip('- *0123456789. '),
+                    confidence=0.8,
+                    first_seen=time_start,
+                    last_seen=time_end,
+                    severity=severity
+                ))
+                if len(detected_patterns) >= 10:
+                    break
+
         return AIAnalysisResult(
             log_entries_analyzed=len(log_entries),
             time_window_start=time_start,
@@ -612,6 +646,8 @@ Log Entries ({len(sample_logs)} of {len(log_entries)} total):
             confidence_score=0.8,  # Default confidence
             error_rate=error_rate,
             recommendations=recommendations,
+            summary=summary.strip() or response_text[:300], # Fallback
+            detected_patterns=detected_patterns,
             severity_distribution=severity_dist,
             tags=[analysis_type, "gemini-analysis"]
         )

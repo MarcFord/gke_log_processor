@@ -93,7 +93,7 @@ class AIConfig(BaseModel):
     """Gemini AI integration configuration."""
 
     gemini_api_key: Optional[str] = Field(None, description="Gemini AI API key")
-    model_name: str = Field("gemini-1.5-flash", description="Gemini model identifier")
+    model_name: str = Field("gemini-3-flash-preview", description="Gemini model identifier")
     temperature: float = Field(0.7, ge=0.0, le=2.0, description="Sampling temperature")
     max_tokens: int = Field(2048, gt=0, description="Maximum response tokens")
     analysis_enabled: bool = Field(True, description="Enable AI analysis features")

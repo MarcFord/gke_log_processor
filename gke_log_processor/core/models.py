@@ -233,7 +233,7 @@ class LogEntry(BaseModel):
         """Validate log message."""
         if not isinstance(v, str):
             raise ValueError("Log message must be a string")
-        return v.strip()
+        return v
 
     @field_validator("level", mode="before")
     @classmethod
@@ -386,6 +386,7 @@ class AIAnalysisResult(BaseModel):
     recommendations: List[str] = Field(
         default_factory=list, description="AI-generated recommendations"
     )
+    summary: Optional[str] = Field(None, description="AI-generated summary of logs")
     tags: List[str] = Field(default_factory=list, description="Analysis tags")
     metadata: Dict[str, Any] = Field(
         default_factory=dict, description="Additional analysis metadata"

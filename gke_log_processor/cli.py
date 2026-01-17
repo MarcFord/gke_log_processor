@@ -18,6 +18,7 @@ from .ai.summarizer import LogSummaryReport, SummarizerConfig
 from .core.config import Config
 from .core.exceptions import GKELogProcessorError
 from .core.models import AIAnalysisResult, LogEntry, LogLevel, SeverityLevel
+from .core.service import LogProcessingService
 from .gke.client import GKEClient
 from .ui.app import GKELogProcessorApp
 
@@ -191,7 +192,7 @@ def _build_log_entry(
         pod_name=pod_name,
         namespace=namespace,
         cluster=cluster,
-        container_name=container_name,
+        container_name=container,
         raw_message=raw_line,
     )
 
@@ -300,59 +301,37 @@ async def _collect_ai_summary(
 ) -> SummaryArtifacts:
     """Fetch pod logs and generate AI analysis and summary."""
 
-    client = GKEClient(config)
-    try:
-        k8s_client = client.get_kubernetes_client()
-        pod = await k8s_client.get_pod(pod_name, namespace)
+    service = LogProcessingService(config)
+    
+    # We need to get the container name if it's not provided, similar to original logic
+    # Service doesn't return container name directly with get_pod_logs currently
+    # But get_pod_logs handles the fetching.
+    
+    # To keep this clean, let's use the service but we might need to query pod details 
+    # to get the container name for the artifact if not provided.
+    
+    # For now, let's stick to using the service for fetching and analysis
+    
+    log_entries = await service.get_pod_logs(
+        namespace=namespace,
+        pod_name=pod_name,
+        container=container_override,
+        tail_lines=tail_lines
+    )
 
-        container_name = container_override or (pod.containers[0] if pod.containers else None)
-        if not container_name:
-            raise click.ClickException(
-                f"Pod '{namespace}/{pod_name}' has no containers to analyze"
-            )
+    if not log_entries:
+        return SummaryArtifacts(None, None, [], container_override or "unknown", namespace)
 
-        raw_logs = await k8s_client.get_pod_logs(
-            pod.name,
-            namespace=pod.namespace,
-            container=container_name,
-            tail_lines=tail_lines,
-            timestamps=True,
-        )
+    # Determine container name from first log entry if available
+    container_name = log_entries[0].container_name if log_entries else (container_override or "unknown")
 
-        cluster_name = (
-            config.gke.cluster_name
-            or (config.current_cluster.name if config.current_cluster else None)
-            or "unknown"
-        )
+    analysis = await service.analyze_logs(
+        log_entries,
+        analysis_type="summary",
+    )
+    summary = await service.summarize_logs(log_entries)
 
-        log_entries = [
-            _build_log_entry(
-                line,
-                pod_name=pod.name,
-                namespace=pod.namespace,
-                cluster=cluster_name,
-                container_name=container_name,
-            )
-            for line in raw_logs
-        ]
-
-        if not log_entries:
-            return SummaryArtifacts(None, None, [], container_name, pod.namespace)
-
-        engine = _build_analysis_engine(config)
-        use_ai = config.ai.analysis_enabled and engine.gemini_client is not None
-
-        analysis = await engine.analyze_logs_comprehensive(
-            log_entries,
-            use_ai=use_ai,
-            analysis_type="summary",
-        )
-        summary = await engine.summarizer.summarize_logs(log_entries)
-
-        return SummaryArtifacts(analysis, summary, log_entries, container_name, pod.namespace)
-
-    finally:
-        client.close()
+    return SummaryArtifacts(analysis, summary, log_entries, container_name, namespace)
 
 
 def _list_pods(config: Config) -> None:
@@ -502,6 +481,7 @@ def _summary_options(func):
 @click.pass_context
 @_summary_options
 @click.option("--pod-name", "-P", help="Name of the pod to analyze")
+@click.option("--pod-regex", "-R", help="Regex pattern to match pod names")
 @click.option("--container", "-C", help="Specific container within the pod")
 @click.option(
     "--tail-lines",
@@ -512,6 +492,7 @@ def _summary_options(func):
 def ai_summary(
     ctx: click.Context,
     pod_name: Optional[str],
+    pod_regex: Optional[str],
     container: Optional[str],
     tail_lines: Optional[int],
     cluster: Optional[str],
@@ -536,8 +517,8 @@ def ai_summary(
     gemini_api_key = gemini_api_key or base_options.get("gemini_api_key")
     verbose = verbose or base_options.get("verbose", False)
 
-    if not pod_name:
-        raise click.ClickException("Pod name is required (use --pod-name)")
+    if not pod_name and not pod_regex:
+        raise click.ClickException("Either pod name (use --pod-name) or pod regex (use --pod-regex) is required")
 
     try:
         config = _load_config_from_options(
@@ -563,23 +544,268 @@ def ai_summary(
         if effective_tail <= 0:
             raise click.ClickException("tail-lines must be greater than zero")
 
-        artifacts = asyncio.run(
-            _collect_ai_summary(
-                config,
-                pod_name=pod_name,
-                namespace=namespace,
-                container_override=container,
-                tail_lines=effective_tail,
-            )
-        )
+        if pod_regex:
+            import re
+            try:
+                re.compile(pod_regex)
+            except re.error as e:
+                raise click.ClickException(f"Invalid regex pattern: {e}")
 
-        if not artifacts.log_entries:
-            console.print(
-                f"[yellow]No logs retrieved for pod '{namespace}/{pod_name}'.[/yellow]"
+            console.print(f"[cyan]Fetching logs for pods matching '{pod_regex}'...[/cyan]")
+            service = LogProcessingService(config)
+            log_entries = asyncio.run(
+                service.get_matching_pods_logs(
+                    namespace=namespace,
+                    pod_regex=pod_regex,
+                    container=container,
+                    tail_lines=effective_tail
+                )
             )
+            if not log_entries:
+                console.print(f"[yellow]No logs found for pods matching '{pod_regex}' in namespace '{namespace}'.[/yellow]")
+                return
+
+            pod_name_display = f"regex('{pod_regex}')"
+            container_name = container or "mixed"
+        else:
+            # pod_name is guaranteed to be set if pod_regex is not, due to prior check
+            if not pod_name:
+                 raise click.ClickException("Pod name is required if regex is not provided")
+
+            artifacts = asyncio.run(
+                _collect_ai_summary(
+                    config,
+                    pod_name=pod_name,
+                    namespace=namespace,
+                    container_override=container,
+                    tail_lines=effective_tail,
+                )
+            )
+            if not artifacts.log_entries:
+                console.print(
+                    f"[yellow]No logs retrieved for pod '{namespace}/{pod_name}'.[/yellow]"
+                )
+                return
+            
+            # Use simple render for single pod path
+            _render_summary(pod_name, artifacts.pod_namespace, artifacts)
             return
 
-        _render_summary(pod_name, artifacts.pod_namespace, artifacts)
+        # Process aggregated logs
+        # This part handles the 'if pod_regex' branch continuation
+        service = LogProcessingService(config)
+        analysis = asyncio.run(service.analyze_logs(log_entries, analysis_type="summary"))
+        summary = asyncio.run(service.summarize_logs(log_entries))
+        
+        artifacts = SummaryArtifacts(
+            analysis=analysis,
+            summary=summary,
+            log_entries=log_entries,
+            container_name=container,
+            pod_namespace=namespace
+        )
+        
+        _render_summary(pod_name_display, namespace, artifacts)
+
+    except GKELogProcessorError as error:
+        console.print(f"[red]Cluster error: {error}[/red]")
+        raise click.Abort()
+    except click.ClickException:
+        raise
+    except Exception as error:  # pragma: no cover - defensive logging
+        console.print(f"[red]Unexpected error: {error}[/red]")
+        if verbose:
+            console.print_exception()
+        raise click.Abort()
+
+
+
+@cli.command("logs")
+@click.pass_context
+@_summary_options
+@click.option("--pod-name", "-P", help="Name of the pod to analyze")
+@click.option("--pod-regex", "-R", help="Regex pattern to match pod names")
+@click.option("--container", "-C", help="Specific container within the pod")
+@click.option(
+    "--tail-lines",
+    "-t",
+    type=int,
+    help="Number of recent log lines to analyze (defaults to streaming.tail_lines)",
+)
+@click.option("--filter", "-f", "filter_pattern", help="Regex pattern to filter log messages")
+def logs(
+    ctx: click.Context,
+    pod_name: Optional[str],
+    pod_regex: Optional[str],
+    container: Optional[str],
+    tail_lines: Optional[int],
+    filter_pattern: Optional[str],
+    cluster: Optional[str],
+    project: Optional[str],
+    zone: Optional[str],
+    region: Optional[str],
+    namespace: Optional[str],
+    config_file: Optional[str],
+    gemini_api_key: Optional[str],
+    verbose: bool,
+) -> None:
+    """View logs from a pod or multiple pods with regex support."""
+    import re
+
+    base_options = (ctx.obj or {}).get("base_options", {})
+
+    cluster = cluster or base_options.get("cluster")
+    project = project or base_options.get("project")
+    zone = zone or base_options.get("zone")
+    region = region or base_options.get("region")
+    namespace = namespace or base_options.get("namespace") or "default"
+    config_file = config_file or base_options.get("config_file")
+    gemini_api_key = gemini_api_key or base_options.get("gemini_api_key")
+    verbose = verbose or base_options.get("verbose", False)
+
+    if not pod_name and not pod_regex:
+        raise click.ClickException(
+            "Either pod name (use --pod-name) or pod regex (use --pod-regex) is required"
+        )
+
+    try:
+        config = _load_config_from_options(
+            config_file=config_file,
+            cluster=cluster,
+            project=project,
+            zone=zone,
+            region=region,
+            namespace=namespace,
+            gemini_api_key=gemini_api_key,
+            verbose=verbose,
+        )
+        _validate_cluster_config(config)
+
+        effective_tail = tail_lines or config.streaming.tail_lines or 200
+        if effective_tail <= 0:
+            raise click.ClickException("tail-lines must be greater than zero")
+
+        service = LogProcessingService(config)
+        log_entries: List[LogEntry] = []
+        source_desc = ""
+
+        if pod_regex:
+            try:
+                re.compile(pod_regex)
+            except re.error as e:
+                raise click.ClickException(f"Invalid pod regex pattern: {e}")
+
+            console.print(f"[cyan]Fetching logs for pods matching '{pod_regex}'...[/cyan]")
+            log_entries = asyncio.run(
+                service.get_matching_pods_logs(
+                    namespace=namespace,
+                    pod_regex=pod_regex,
+                    container=container,
+                    tail_lines=effective_tail,
+                )
+            )
+            if not log_entries:
+                console.print(
+                    f"[yellow]No logs found for pods matching '{pod_regex}' in namespace '{namespace}'.[/yellow]"
+                )
+                return
+            source_desc = f"regex('{pod_regex}')"
+        else:
+            # pod_name is guaranteed to be set
+            if not pod_name:
+                raise click.ClickException("Pod name is required")
+                
+            console.print(f"[cyan]Fetching logs for pod '{pod_name}'...[/cyan]")
+            log_entries = asyncio.run(
+                service.get_pod_logs(
+                    namespace=namespace,
+                    pod_name=pod_name,
+                    container=container,
+                    tail_lines=effective_tail,
+                )
+            )
+            if not log_entries:
+                console.print(
+                    f"[yellow]No logs retrieved for pod '{namespace}/{pod_name}'.[/yellow]"
+                )
+                return
+            source_desc = f"{namespace}/{pod_name}"
+
+        # Apply message filter if provided
+        if filter_pattern:
+            try:
+                pattern = re.compile(filter_pattern, re.IGNORECASE)
+                original_count = len(log_entries)
+                log_entries = [e for e in log_entries if pattern.search(e.message)]
+                console.print(
+                    f"[dim]Filtered {original_count} logs down to {len(log_entries)} matching '{filter_pattern}'[/dim]"
+                )
+            except re.error as e:
+                raise click.ClickException(f"Invalid filter regex pattern: {e}")
+
+        if not log_entries:
+            console.print("[yellow]No logs to display after filtering.[/yellow]")
+            return
+
+        # Render logs table
+        table = Table(
+            title=f"Logs for {source_desc}",
+            show_header=True,
+            header_style="bold magenta",
+            border_style="dim",
+            # box=click.exceptions # This was weird in my thought, box=None or box.SIMPLE
+        )
+        table.add_column("Timestamp", style="dim", width=24)
+        if pod_regex:  # specific pod provided? might be multiple if regex
+            table.add_column("Pod", style="cyan")
+            table.add_column("Container", style="blue")
+        table.add_column("Level", width=8)
+        table.add_column("Message")
+
+        level_styles = {
+            "TRACE": "dim",
+            "DEBUG": "cyan",
+            "INFO": "green",
+            "WARN": "yellow",
+            "WARNING": "yellow",
+            "ERROR": "red",
+            "CRITICAL": "bold red",
+            "FATAL": "bold red reversed",
+        }
+
+        for entry in log_entries:
+            level_str = (entry.level or "INFO").upper()
+            style = level_styles.get(level_str, "white")
+            
+            row = [
+                entry.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+            ]
+            if pod_regex:
+                row.append(entry.pod_name)
+                row.append(entry.container_name)
+            
+            row.append(f"[{style}]{level_str}[/{style}]")
+            row.append(entry.message)
+            
+            table.add_row(*row)
+
+        console.print(table)
+
+        # Process aggregated logs
+        # This part handles the 'if pod_regex' branch continuation
+        service = LogProcessingService(config)
+        analysis = asyncio.run(service.analyze_logs(log_entries, analysis_type="comprehensive"))
+        summary = asyncio.run(service.summarize_logs(log_entries, ai_summary=analysis.summary))
+        
+        artifacts = SummaryArtifacts(
+            analysis=analysis,
+            summary=summary,
+            log_entries=log_entries,
+            container_name=container,
+            pod_namespace=namespace
+        )
+        
+        _render_summary(source_desc, namespace, artifacts)
 
     except GKELogProcessorError as error:
         console.print(f"[red]Cluster error: {error}[/red]")
@@ -594,6 +820,22 @@ def ai_summary(
 
 
 main = cli
+
+
+@cli.command("serve")
+@click.option("--host", default="127.0.0.1", help="Host to bind to")
+@click.option("--port", default=8000, help="Port to bind to")
+@click.option("--reload", is_flag=True, help="Enable auto-reload")
+def serve(host: str, port: int, reload: bool) -> None:
+    """Start the GKE Log Processor API server."""
+    import uvicorn
+    console.print(f"[green]Starting API server at http://{host}:{port}[/green]")
+    uvicorn.run(
+        "gke_log_processor.api.main:app",
+        host=host,
+        port=port,
+        reload=reload,
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover

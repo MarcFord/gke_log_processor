@@ -110,6 +110,7 @@ class SummarizerConfig(BaseModel):
     min_confidence: float = Field(default=0.6, ge=0.0, le=1.0)
     enable_trend_analysis: bool = Field(default=True)
     enable_ai_summarization: bool = Field(default=True)
+    enable_window_ai_summarization: bool = Field(default=False)
     max_summary_length: int = Field(default=500, ge=100, le=2000)
 
 
@@ -143,7 +144,8 @@ class LogSummarizer:
     async def summarize_logs(
         self,
         log_entries: List[LogEntry],
-        config: Optional[SummarizerConfig] = None
+        config: Optional[SummarizerConfig] = None,
+        ai_summary: Optional[str] = None
     ) -> LogSummaryReport:
         """Generate a comprehensive summary report from log entries.
 
@@ -172,9 +174,11 @@ class LogSummarizer:
             trend_analyses = await self._analyze_trends(window_summaries, effective_config)
 
         # Generate executive summary
-        executive_summary = await self._generate_executive_summary(
-            log_entries, window_summaries, key_insights, effective_config
-        )
+        executive_summary = ai_summary
+        if not executive_summary:
+            executive_summary = await self._generate_executive_summary(
+                log_entries, window_summaries, key_insights, effective_config
+            )
 
         # Generate recommendations
         recommendations = await self._generate_recommendations(
@@ -263,7 +267,7 @@ class LogSummarizer:
         summary_text = ""
         key_events = []
 
-        if config.enable_ai_summarization and self.ai_client:
+        if config.enable_window_ai_summarization and self.ai_client:
             try:
                 summary_text = await self._generate_window_summary_ai(window_logs, config)
                 key_events = await self._extract_key_events_ai(window_logs, config)
@@ -700,7 +704,7 @@ class LogSummarizer:
     ) -> str:
         """Generate AI-powered executive summary."""
         # Sample logs for AI processing
-        sample_logs = log_entries[:100]
+        sample_logs = log_entries[:5000]
 
         return await self.ai_client.summarize_logs(
             sample_logs,
