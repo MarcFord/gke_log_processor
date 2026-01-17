@@ -156,21 +156,99 @@ ui:
 
 ## CLI Reference
 
-```bash
-gke-logs [OPTIONS]
+The `gke-logs` CLI provides several commands for interactive and batch log processing.
 
-Options:
-  -c, --cluster TEXT       GKE cluster name [required]
-  -p, --project TEXT       GCP project ID [required]
-  -z, --zone TEXT          GKE cluster zone
-  -r, --region TEXT        GKE cluster region  
-  -n, --namespace TEXT     Kubernetes namespace [default: default]
-  --config-file TEXT       Path to configuration file
-  --gemini-api-key TEXT    Gemini AI API key
-  -v, --verbose           Enable verbose logging
-  --version               Show version information
-  --help                  Show this message and exit
+### Global Options
+
+All commands support these base connection options:
+
+| Option | Shorthand | Description | Required |
+| --- | --- | --- | --- |
+| `--cluster` | `-c` | GKE cluster name | Yes |
+| `--project` | `-p` | GCP project ID | Yes |
+| `--namespace` | `-n` | Kubernetes namespace | No (default: `default`) |
+| `--zone` | `-z` | GKE cluster zone (for zonal clusters) | No |
+| `--region` | `-r` | GKE cluster region (for regional clusters) | No |
+| `--config-file` | | Path to configuration file | No |
+| `--gemini-api-key` | | Gemini AI API key | No |
+| `--verbose` | `-v` | Enable verbose logging | No |
+
+### Commands
+
+#### 1. `ui` (Interactive TUI)
+
+Launch the interactive terminal user interface for exploring pods and logs.
+
+```bash
+gke-logs ui [OPTIONS]
 ```
+
+#### 2. `ai-summary`
+
+Generate a comprehensive AI-powered summary for a specific pod's recent logs.
+
+```bash
+gke-logs ai-summary --pod-name <pod-name> [OPTIONS]
+```
+
+#### 3. `logs`
+
+Stream or view logs from a pod with optional AI analysis.
+
+```bash
+gke-logs logs --pod-name <pod-name> --ai [OPTIONS]
+```
+
+- Use `--pod-regex` to match multiple pods.
+- Use `--ai` to enable consolidated analysis and summary in one pass.
+- Use `--filter` to apply a local regex filter to log messages.
+
+#### 4. `serve`
+
+Start the GKE Log Processor backend API server.
+
+```bash
+gke-logs serve --port 8080
+```
+
+---
+
+## Backend API
+
+The `serve` command launches a FastAPI-based backend that exposes log analysis and streaming capabilities over HTTP and WebSockets.
+
+### REST Endpoints
+
+#### `GET /health`
+
+Returns the API status and version.
+
+#### `POST /analysis/summary`
+
+Trigger a consolidated AI analysis and summary for a specific pod.
+
+- **Request Body**:
+
+  ```json
+  {
+    "namespace": "default",
+    "pod_name": "my-pod-123",
+    "container": "main",
+    "tail_lines": 500
+  }
+  ```
+
+- **Response**: Returns a structured `AIAnalysisResult` containing patterns, recommendations, and an executive summary.
+
+### WebSocket Endpoints
+
+#### `WS /ws/logs/{namespace}/{pod_name}`
+
+Stream log entries in real-time over a WebSocket connection.
+
+- **Query Parameters**:
+  - `container`: Specific container name
+  - `tail_lines`: Initial lines to fetch (default: 50)
 
 ## Development
 
